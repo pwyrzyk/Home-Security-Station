@@ -24205,6 +24205,20 @@
         "status": "success",
         "commandDesc": "pio device list --json-output",
         "exitCode": 0
+      },
+      {
+        "taskId": "142ad9f8-72c0-463f-adac-f989560a9d75",
+        "type": "device",
+        "status": "success",
+        "commandDesc": "pio device list --json-output",
+        "exitCode": 0
+      },
+      {
+        "taskId": "d23816cd-9c4c-420d-890c-f4e5c14d1a1d",
+        "type": "device",
+        "status": "success",
+        "commandDesc": "pio device list --json-output",
+        "exitCode": 0
       }
     ],
     "mcpRequest": {
