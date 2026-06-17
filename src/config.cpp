@@ -62,16 +62,21 @@ void setDefaults() {
     snprintf(config.zones[i].name, sizeof(config.zones[i].name), "Zone %d", i + 1);
     config.zones[i].entryDelayS = 10;
     config.zones[i].exitDelayS  = 5;
+    config.zones[i].sirenOnS    = 0;
+    config.zones[i].sirenOffS   = 0;
     config.zones[i].relayMask   = 0;
     config.zones[i].enabled     = true;
   }
 
   // ─── Default relays (active LOW) ──────────────────────────────────────
-  const char* relayNames[MAX_RELAYS] = { "Siren", "Pulse TX", "Tamper", "No-Power" };
+  const char* relayNames[MAX_RELAYS] = { "Siren", "Alarm", "Tamper", "No-Power" };
+  const RelayMode defaultModes[MAX_RELAYS] = { RELAY_FOLLOW_ZONE, RELAY_PULSE_MODE, RELAY_OFF, RELAY_OFF };
+  const uint8_t  defaultZoneIds[MAX_RELAYS] = { 0, 0, 0, 0 };
   for (int i = 0; i < MAX_RELAYS; i++) {
     strlcpy(config.relays[i].name, relayNames[i], sizeof(config.relays[i].name));
-    config.relays[i].mode   = RELAY_OFF;
-    config.relays[i].zoneId = 0;
+    config.relays[i].mode    = defaultModes[i];
+    config.relays[i].zoneId  = defaultZoneIds[i];
+    config.relays[i].enabled = true;
   }
 
   // ─── Default external MQTT sensors ────────────────────────────────────
@@ -152,8 +157,10 @@ void loadConfig() {
     sensorStates[i].rawValue = 0;
   }
   for (int i = 0; i < MAX_ZONES; i++) {
-    zoneStates[i].armed      = false;
-    zoneStates[i].alarmState = ZONE_DISARMED;
+    zoneStates[i].armed         = false;
+    zoneStates[i].alarmState    = ZONE_DISARMED;
+    zoneStates[i].sirenPhaseMs  = 0;
+    zoneStates[i].sirenOn       = false;
   }
   for (int i = 0; i < MAX_RELAYS; i++) {
     relayStates[i] = false;

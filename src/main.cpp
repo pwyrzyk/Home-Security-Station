@@ -98,14 +98,14 @@ void loop() {
   mqttFlushPostConnect();
   mqttStatusLoop();
 
-  // ─── Status LED: fast blink during prealarm, slow blink during alarm ───
+  // ─── Status LED: fast blink during disarming/prealarm, slow blink during alarm ───
   static uint32_t lastLedBlink = 0;
-  bool anyPrealarm = false, anyAlarm = false;
+  bool anyWarning = false, anyAlarm = false;
   for (int z = 0; z < MAX_ZONES; z++) {
-    if (zoneStates[z].alarmState == ZONE_PREALARM) anyPrealarm = true;
-    if (zoneStates[z].alarmState == ZONE_ALARM)     anyAlarm    = true;
+    if (zoneStates[z].alarmState == ZONE_DISARMING) anyWarning = true;
+    if (zoneStates[z].alarmState == ZONE_ALARM)     anyAlarm  = true;
   }
-  uint32_t blinkRate = anyAlarm ? 500 : (anyPrealarm ? 200 : 0);
+  uint32_t blinkRate = anyAlarm ? 500 : (anyWarning ? 200 : 0);
   if (blinkRate > 0) {
     if (now - lastLedBlink >= blinkRate) {
       lastLedBlink = now;

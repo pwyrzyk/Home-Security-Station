@@ -1,0 +1,39 @@
+Processing esp32-c3-devkitm-1 (platform: espressif32; board: esp32-c3-devkitm-1; framework: arduino)
+--------------------------------------------------------------------------------
+Verbose mode can be enabled via `-v, --verbose` option
+CONFIGURATION: https://docs.platformio.org/page/boards/espressif32/esp32-c3-devkitm-1.html
+PLATFORM: Espressif 32 (7.0.1) > Espressif ESP32-C3-DevKitM-1
+HARDWARE: ESP32C3 160MHz, 320KB RAM, 4MB Flash
+DEBUG: Current (cmsis-dap) External (cmsis-dap, esp-bridge, esp-builtin, esp-prog, iot-bus-jtag, jlink, minimodule, olimex-arm-usb-ocd, olimex-arm-usb-ocd-h, olimex-arm-usb-tiny-h, olimex-jtag-tiny, tumpa)
+PACKAGES: 
+ - framework-arduinoespressif32 @ 3.20017.241212+sha.dcc1105b 
+ - tool-esptoolpy @ 2.41100.0 (4.11.0) 
+ - toolchain-riscv32-esp @ 8.4.0+2021r2-patch5
+LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+LDF Modes: Finder ~ chain, Compatibility ~ soft
+Found 39 compatible libraries
+Scanning dependencies...
+Dependency Graph
+|-- Adafruit ADS1X15 @ 2.6.2
+|-- PubSubClient @ 2.8.0
+|-- ESPAsyncWebServer-esphome @ 3.4.1
+|-- ArduinoJson @ 7.4.3
+|-- EEPROM @ 2.0.0
+|-- Update @ 2.0.0
+|-- WiFi @ 2.0.0
+|-- ArduinoOTA @ 2.0.0
+|-- ESPmDNS @ 2.0.0
+Building in release mode
+Compiling .pio/build/esp32-c3-devkitm-1/src/mqtt.cpp.o
+Linking .pio/build/esp32-c3-devkitm-1/firmware.elf
+Retrieving maximum program size .pio/build/esp32-c3-devkitm-1/firmware.elf
+Checking size .pio/build/esp32-c3-devkitm-1/firmware.elf
+Advanced Memory Usage is available via "PlatformIO Home > Project Inspect"
+RAM:   [=         ]  14.1% (used 46116 bytes from 327680 bytes)
+Flash: [=======   ]  68.6% (used 898818 bytes from 1310720 bytes)
+Building .pio/build/esp32-c3-devkitm-1/firmware.bin
+esptool.py v4.11.0
+Creating esp32c3 image...
+Merged 2 ELF sections
+Successfully created esp32c3 image.
+========================= [SUCCESS] Took 2.97 seconds =========================

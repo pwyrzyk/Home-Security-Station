@@ -43,8 +43,8 @@
 #endif
 
 // ─── Network defaults ──────────────────────────────────────────────────────
-#define DEFAULT_WIFI_SSID  ""
-#define DEFAULT_WIFI_PASS  ""
+#define DEFAULT_WIFI_SSID  "Jasminowa_5"
+#define DEFAULT_WIFI_PASS  "vader001"
 #define DEFAULT_MQTT_SERVER "192.168.1.20"
 #define DEFAULT_MQTT_PORT   1883
 #define DEFAULT_MQTT_USER   ""
@@ -65,7 +65,7 @@
 
 // ─── EEPROM ────────────────────────────────────────────────────────────────
 #define EEPROM_SIZE  4096
-#define EEPROM_MAGIC 0xAA
+#define EEPROM_MAGIC 0xAC
 
 // ─── Zone limits ───────────────────────────────────────────────────────────
 #define MAX_EXT_SENSORS 16
@@ -88,10 +88,12 @@ enum SensorState : uint8_t {
 
 // ─── Zone alarm states ─────────────────────────────────────────────────────
 enum ZoneAlarmState : uint8_t {
-  ZONE_DISARMED  = 0,
+  ZONE_DISARMED   = 0,
   ZONE_ARMED_IDLE = 1,
-  ZONE_PREALARM  = 2,
-  ZONE_ALARM     = 3
+  ZONE_PREALARM   = 2,   // unused, kept for backward compatibility
+  ZONE_ALARM      = 3,
+  ZONE_ARMING     = 4,   // exit delay active, sensors ignored
+  ZONE_DISARMING  = 5    // entry delay active, time to disarm before alarm
 };
 
 // ─── Relay modes ───────────────────────────────────────────────────────────
@@ -132,8 +134,10 @@ struct SensorConfig {
 // ─── Per-zone configuration ────────────────────────────────────────────────
 struct ZoneConfig {
   char name[24];
-  uint8_t entryDelayS;      // 0..120, prealarm delay
+  uint8_t entryDelayS;      // 0..120, entry delay before alarm
   uint8_t exitDelayS;       // 0..120, exit delay after arming
+  uint8_t sirenOnS;         // 0..255, siren ON time (0=continuous)
+  uint8_t sirenOffS;        // 0..255, siren OFF time between cycles (0=no cycling)
   uint8_t relayMask;        // bitmask of relays to activate on alarm
   bool enabled;             // zone enabled/disabled
 };
@@ -143,6 +147,7 @@ struct RelayConfig {
   char name[24];
   RelayMode mode;
   uint8_t zoneId;           // if FOLLOW_ZONE: which zone
+  bool enabled;             // false = relay stays OFF regardless of mode
 };
 
 // ─── External MQTT sensor configuration ────────────────────────────────────
@@ -215,6 +220,8 @@ struct ZoneStateData {
   ZoneAlarmState alarmState;
   uint32_t armedAtMs;
   uint32_t preAlarmStartMs;
+  uint32_t sirenPhaseMs;    // start of current siren ON/OFF phase
+  bool sirenOn;             // true = siren relay should be ON this phase
 };
 
 extern ZoneStateData zoneStates[MAX_ZONES];

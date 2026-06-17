@@ -75,6 +75,11 @@ void mqttFlushPostConnect() {
     mqtt.subscribe((mqttBase + "/ext_sensor/" + String(i)).c_str());
   }
 
+  // Drain retained MQTT messages delivered after subscribe
+  mqtt.loop();
+  // Override any retained arm commands — zones must start disarmed
+  disarmAllZones();
+
   pub("status/running", "true");
   haPublishAllDiscoveries();
   publishStatus();
@@ -114,7 +119,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int len) {
     String num = t.substring((mqttBase + "/ext_sensor/").length());
     int s = num.toInt();
     if (s >= 1 && s <= MAX_EXT_SENSORS) {
-      bool active = (p == "active" || p == "1" || p == "true" || p == "on");
+      String pl = p;
+      pl.toLowerCase();
+      bool active = (pl == "active" || pl == "1" || pl == "on");
       extSensorStates[s - 1].active = active;
       extSensorStates[s - 1].lastChangeMs = millis();
     }

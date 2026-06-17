@@ -61,9 +61,10 @@ static void apiStatus(AsyncWebServerRequest *req) {
   JsonArray relays = root["relays"].to<JsonArray>();
   for (int i = 0; i < MAX_RELAYS; i++) {
     JsonObject r = relays.add<JsonObject>();
-    r["id"]    = i + 1;
-    r["name"]  = config.relays[i].name;
-    r["state"] = relayStates[i];
+    r["id"]      = i + 1;
+    r["name"]    = config.relays[i].name;
+    r["state"]   = relayStates[i];
+    r["enabled"] = config.relays[i].enabled;
   }
 
   JsonArray dins = root["din"].to<JsonArray>();
@@ -242,137 +243,153 @@ static const char HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Alarm ESP</title><style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Arial,sans-serif;background:#1a1a2e;color:#eee;min-height:100vh}
-nav{display:flex;background:#0f3460;padding:0}
-nav button{padding:12px 24px;background:none;border:none;color:#aaa;cursor:pointer;font-size:15px;border-bottom:2px solid transparent}
-nav button:hover{color:#fff}nav button.active{color:#e94560;border-bottom-color:#e94560}
-.page{display:none;padding:20px;max-width:1100px;margin:0 auto}
-.page.active{display:block}h1{color:#e94560;margin-bottom:16px}h2{color:#ccc;margin-bottom:12px}
-.card{background:#16213e;border-radius:8px;padding:16px;margin:12px 0}
-.zone-grid{display:flex;gap:6px;justify-content:space-between}
-.zone-box{width:110px;border-radius:10px;padding:12px 6px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:6px;transition:all 0.3s;flex-shrink:0}
-.zone-box.disarmed{border:1px solid #1a1a2e;background:#16213e}
-.zone-box.armed_idle{border:1px solid #2ecc71;background:#142820}
-.zone-box.prealarm{border:1px solid #f39c12;background:#2d2600}
-.zone-box.alarm{border:1px solid #e74c3c;background:#2d1010}
-.zone-dot{width:10px;height:10px;border-radius:50%}
-.zone-dot.disarmed{background:#666}
-.zone-dot.armed_idle{background:#2ecc71}
-.zone-dot.prealarm{background:#f39c12}
-.zone-dot.alarm{background:#e74c3c}
-.zone-name{font-size:11px;font-weight:bold;line-height:1.2}
-.zone-label{font-size:10px;color:#aaa}
-.zone-label.has-state{color:#2ecc71}
-.zone-label.prealarm-state{color:#f39c12}
-.zone-label.alarm-state{color:#e74c3c}
-.toggle{position:relative;display:inline-block;width:44px;height:24px}
+body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;background:#f2f2f7;color:#1d1d1f;min-height:100vh;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+nav{display:flex;background:rgba(255,255,255,0.72);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);padding:0;position:sticky;top:0;z-index:100;border-bottom:1px solid rgba(0,0,0,0.06)}
+nav button{padding:14px 22px;background:none;border:none;color:#86868b;cursor:pointer;font-size:14px;font-weight:500;letter-spacing:-0.01em;border-bottom:2px solid transparent;transition:color 0.2s,border-color 0.2s}
+nav button:hover{color:#1d1d1f}nav button.active{color:#0071e3;border-bottom-color:#0071e3}
+.page{display:none;padding:32px 24px;max-width:1100px;margin:0 auto}
+.page.active{display:block}h1{font-size:32px;font-weight:700;color:#1d1d1f;margin-bottom:4px;letter-spacing:-0.02em}h2{font-size:17px;font-weight:600;color:#1d1d1f;margin-bottom:14px;letter-spacing:-0.01em}
+.card{background:#fff;border-radius:16px;padding:20px;margin:16px 0;box-shadow:0 1px 3px rgba(0,0,0,0.04),0 1px 2px rgba(0,0,0,0.06)}
+.zone-grid{display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap}
+.zone-box{flex:1;min-width:100px;max-width:130px;border-radius:16px;padding:16px 8px 12px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;transition:all 0.25s ease;flex-shrink:0;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.04)}
+.zone-box.disarmed{border:1.5px solid #e5e5ea;background:#fff}
+.zone-box.armed_idle{border:1.5px solid #34c759;background:#f0fff4}
+.zone-box.arming{border:1.5px solid #0071e3;background:#f0f7ff}
+.zone-box.prealarm{border:1.5px solid #ff9500;background:#fff8f0}
+.zone-box.disarming{border:1.5px solid #ff9500;background:#fff8f0}
+.zone-box.alarm{border:1.5px solid #ff3b30;background:#fff0f0}
+.zone-dot{width:12px;height:12px;border-radius:50%;box-shadow:0 0 0 2px rgba(0,0,0,0.04)}
+.zone-dot.disarmed{background:#aeaeb2}
+.zone-dot.armed_idle{background:#34c759}
+.zone-dot.arming{background:#0071e3}
+.zone-dot.prealarm{background:#ff9500}
+.zone-dot.disarming{background:#ff9500}
+.zone-dot.alarm{background:#ff3b30}
+.zone-name{font-size:12px;font-weight:600;line-height:1.2;color:#1d1d1f;letter-spacing:-0.01em}
+.zone-label{font-size:11px;color:#86868b;font-weight:500}
+.zone-label.has-state{color:#34c759}
+.zone-label.arming-state{color:#0071e3}
+.zone-label.prealarm-state{color:#ff9500}
+.zone-label.disarming-state{color:#ff9500}
+.zone-label.alarm-state{color:#ff3b30}
+.toggle{position:relative;display:inline-block;width:51px;height:31px}
 .toggle input{opacity:0;width:0;height:0}
-.toggle-slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#444;border-radius:24px;transition:0.3s}
-.toggle-slider:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background:#eee;border-radius:50%;transition:0.3s}
-.toggle input:checked+.toggle-slider{background:#2ecc71}
+.toggle-slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#e5e5ea;border-radius:31px;transition:0.25s}
+.toggle-slider:before{position:absolute;content:"";height:27px;width:27px;left:2px;bottom:2px;background:#fff;border-radius:50%;transition:0.25s;box-shadow:0 1px 3px rgba(0,0,0,0.15),0 1px 1px rgba(0,0,0,0.06)}
+.toggle input:checked+.toggle-slider{background:#34c759}
 .toggle input:checked+.toggle-slider:before{transform:translateX(20px)}
-.toggle.disarm-slider input+.toggle-slider{background:#555}
-.toggle.alarm-slider input+.toggle-slider{background:#e74c3c}
-.btn{padding:6px 14px;margin:2px;border:none;border-radius:4px;cursor:pointer;font-size:13px;color:#fff}
-.btn-arm{background:#2ecc71}.btn-disarm{background:#e74c3c}
-.btn-save{background:#3498db}.btn-danger{background:#c0392b}
-.sensor-grid{display:flex;flex-direction:column;gap:6px}
-.sensor-row{display:flex;gap:6px;justify-content:space-between}
-.sensor-box{width:110px;border-radius:10px;padding:10px 6px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px;transition:all 0.3s;flex-shrink:0}
-.sensor-box.idle{border:1px solid #1a1a2e;background:#16213e}
-.sensor-box.active{border:1px solid #e74c3c;background:#2d1010}
-.sensor-box.fault{border:1px solid #f39c12;background:#2d2600}
-.sensor-box.disabled{border:1px solid #1a1a2e;background:#0d1020;opacity:0.5}
-.sensor-box .sdot{width:10px;height:10px;border-radius:50%}
-.sensor-box .sdot.idle{background:#2ecc71}
-.sensor-box .sdot.active{background:#e74c3c}
-.sensor-box .sdot.fault{background:#f39c12}
-.sensor-box .sdot.disabled{background:#444}
-.sensor-box .slabel{font-size:11px;font-weight:bold;line-height:1.2}
-.sensor-box .sraw{font-size:12px;font-weight:bold}
-.sensor-box .sraw.idle{color:#2ecc71}
-.sensor-box .sraw.active{color:#e74c3c}
-.sensor-box .sraw.fault{color:#f39c12}
-.sensor-box .sraw.disabled{color:#666}
-.sensor-box .sstate{font-size:10px;color:#aaa}
-.sensor-box .sstate.active-state{color:#e74c3c}
-.sensor-box .sstate.fault-state{color:#f39c12}
-.sensor{display:inline-block;padding:4px 10px;margin:2px;border-radius:4px;font-size:13px}
-.sensor.active{background:#e74c3c}.sensor.fault{background:#f39c12}.sensor.idle{background:#2c3e50}
-.relay-grid{display:flex;gap:6px;justify-content:center}
-.relay-box{width:110px;border-radius:10px;padding:10px 6px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px;transition:all 0.3s;flex-shrink:0}
-.relay-box.off{border:1px solid #1a1a2e;background:#16213e}
-.relay-box.on{border:1px solid #e94560;background:#2d1018}
-.relay-box .rdot{width:10px;height:10px;border-radius:50%}
-.relay-box .rdot.off{background:#666}
-.relay-box .rdot.on{background:#e94560}
-.relay-box .rlabel{font-size:11px;font-weight:bold;line-height:1.2}
-.relay-box .rstate{font-size:12px;font-weight:bold}
-.relay-box .rstate.off{color:#888}
-.relay-box .rstate.on{color:#e94560}
-label{display:block;margin-top:10px;font-size:13px;color:#aaa}
-input,select{width:100%;padding:8px;margin-top:3px;border:1px solid #333;border-radius:4px;background:#0f3460;color:#eee;font-size:14px}
-input[type=number]{width:80px;display:inline;margin:0 2px;-moz-appearance:textfield}
+.toggle.disarm-slider input+.toggle-slider{background:#aeaeb2}
+.toggle.alarm-slider input+.toggle-slider{background:#ff3b30}
+.btn{padding:8px 18px;margin:2px;border:none;border-radius:10px;cursor:pointer;font-size:13px;font-weight:500;color:#fff;letter-spacing:-0.01em;transition:opacity 0.2s,transform 0.1s}
+.btn:hover{opacity:0.88}.btn:active{transform:scale(0.97)}
+.btn-arm{background:#34c759}.btn-disarm{background:#ff3b30}
+.btn-save{background:#0071e3}.btn-danger{background:#ff3b30}
+.sensor-grid{display:flex;flex-direction:column;gap:10px}
+.sensor-row{display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap}
+.sensor-box{flex:1;min-width:100px;max-width:130px;border-radius:16px;padding:14px 8px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:6px;transition:all 0.25s ease;flex-shrink:0;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.04)}
+.sensor-box.idle{border:1.5px solid #e5e5ea;background:#fff}
+.sensor-box.active{border:1.5px solid #ff3b30;background:#fff0f0}
+.sensor-box.fault{border:1.5px solid #ff9500;background:#fff8f0}
+.sensor-box.disabled{border:1.5px solid #e5e5ea;background:#f9f9fb;opacity:0.55}
+.sensor-box .sdot{width:12px;height:12px;border-radius:50%;box-shadow:0 0 0 2px rgba(0,0,0,0.04)}
+.sensor-box .sdot.idle{background:#34c759}
+.sensor-box .sdot.active{background:#ff3b30}
+.sensor-box .sdot.fault{background:#ff9500}
+.sensor-box .sdot.disabled{background:#aeaeb2}
+.sensor-box .slabel{font-size:12px;font-weight:600;line-height:1.2;color:#1d1d1f;letter-spacing:-0.01em}
+.sensor-box .sraw{font-size:13px;font-weight:600}
+.sensor-box .sraw.idle{color:#34c759}
+.sensor-box .sraw.active{color:#ff3b30}
+.sensor-box .sraw.fault{color:#ff9500}
+.sensor-box .sraw.disabled{color:#aeaeb2}
+.sensor-box .sstate{font-size:10px;color:#86868b;font-weight:500;text-transform:uppercase;letter-spacing:0.02em}
+.sensor-box .sstate.active-state{color:#ff3b30}
+.sensor-box .sstate.fault-state{color:#ff9500}
+.sensor{display:inline-block;padding:4px 10px;margin:2px;border-radius:8px;font-size:12px;font-weight:500}
+.sensor.active{background:#ff3b30;color:#fff}.sensor.fault{background:#ff9500;color:#fff}.sensor.idle{background:#e5e5ea;color:#1d1d1f}
+.relay-grid{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.relay-box{flex:1;min-width:100px;max-width:140px;border-radius:16px;padding:14px 8px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:6px;transition:all 0.25s ease;flex-shrink:0;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.04)}
+.relay-box.off{border:1.5px solid #e5e5ea;background:#fff}
+.relay-box.on{border:1.5px solid #0071e3;background:#f0f7ff}
+.relay-box .rdot{width:12px;height:12px;border-radius:50%;box-shadow:0 0 0 2px rgba(0,0,0,0.04)}
+.relay-box .rdot.off{background:#aeaeb2}
+.relay-box .rdot.on{background:#0071e3}
+.relay-box .rlabel{font-size:12px;font-weight:600;line-height:1.2;color:#1d1d1f;letter-spacing:-0.01em}
+.relay-box .rstate{font-size:13px;font-weight:600}
+.relay-box .rstate.off{color:#aeaeb2}
+.relay-box .rstate.on{color:#0071e3}
+label{display:block;margin-top:8px;font-size:12px;color:#86868b;font-weight:500;letter-spacing:-0.01em}
+input:not([type=checkbox]):not([type=file]),select{width:100%;padding:10px 12px;margin-top:4px;border:1.5px solid #e5e5ea;border-radius:10px;background:#f9f9fb;color:#1d1d1f;font-size:14px;font-family:inherit;transition:border-color 0.2s,box-shadow 0.2s}
+input:focus,select:focus{outline:none;border-color:#0071e3;box-shadow:0 0 0 3px rgba(0,113,227,0.15);background:#fff}
+input[type=number]{width:70px;display:inline;margin:0 2px;-moz-appearance:textfield}
 input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
-input[type=checkbox]{width:16px;height:16px;margin:0 2px;accent-color:#3498db}
+input[type=checkbox]{width:18px;height:18px;margin:0 2px;accent-color:#0071e3;-webkit-appearance:checkbox}
 .ztoggle{display:inline-flex;align-items:center;margin-left:auto;flex-shrink:0}
-.ztoggle input{width:36px;height:20px;margin:0;padding:0;cursor:pointer;accent-color:#2ecc71}
-.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.ztoggle input{width:40px;height:22px;margin:0;padding:0;cursor:pointer;accent-color:#34c759}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 @media(max-width:600px){.form-row{grid-template-columns:1fr}}
-small{color:#888}
-#sensorCards,#zoneCards,#extCards{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+small{color:#86868b;font-size:12px}
+#sensorCards,#zoneCards,#extCards{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:750px){#sensorCards,#zoneCards,#extCards{grid-template-columns:1fr}}
-.sens-card{border-radius:8px;padding:8px 10px;font-size:12px;border:1px solid #1a1a2e;background:#16213e}
-.sens-card.idle{border:1px solid #1a1a2e;background:#16213e}
-.sens-card.active{border:1px solid #e74c3c;background:#2d1010}
-.sens-card.fault{border:1px solid #f39c12;background:#2d2600}
-.sens-card.disabled{border:1px solid #1a1a2e;background:#0d1020;opacity:0.5}
-.sens-top{display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap}
-.sens-top .sid{color:#e94560;font-weight:bold;font-size:13px;min-width:22px}
-.sens-top input[type=text]{width:80px;padding:3px 6px;font-size:12px;margin-top:0}
-.sens-top select{width:75px;padding:3px 4px;font-size:11px;margin-top:0}
-.sens-live{display:flex;align-items:center;gap:5px;font-size:11px;margin-left:auto}
+.sens-card{border-radius:14px;padding:14px;font-size:12px;border:1.5px solid #e5e5ea;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.03);transition:border-color 0.25s}
+.sens-card.idle{border-color:#e5e5ea;background:#fff}
+.sens-card.active{border-color:#ff3b30;background:#fff5f5}
+.sens-card.fault{border-color:#ff9500;background:#fffaf5}
+.sens-card.disabled{border-color:#e5e5ea;background:#f9f9fb;opacity:0.55}
+.sens-top{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+.sens-top .sid{color:#0071e3;font-weight:700;font-size:14px;min-width:24px;letter-spacing:-0.01em}
+.sens-top input[type=text]{width:90px;padding:6px 8px;font-size:12px;margin-top:0}
+.sens-top select{width:80px;padding:6px;font-size:12px;margin-top:0}
+.sens-live{display:flex;align-items:center;gap:6px;font-size:12px;margin-left:auto;font-weight:500}
 .sens-live .sdot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
-.sdot.idle{background:#2ecc71}.sdot.active{background:#e74c3c}.sdot.fault{background:#f39c12}.sdot.none{background:#444}
-.srange-row{display:flex;align-items:center;gap:3px;margin:1px 0;font-size:11px}
-.srange-bar{width:6px;height:18px;border-radius:3px;flex-shrink:0}
-.srange-bar.standby{background:#2ecc71}
-.srange-bar.detected{background:#e74c3c}
-.srange-bar.faultbar{background:#f39c12}
-.srange-row input[type=number]{width:52px;padding:2px 4px;font-size:11px;margin-top:0}
-.srange-label{width:60px;color:#aaa;font-size:10px;text-align:right}
-.stiming-row{display:flex;align-items:center;gap:4px;margin:2px 0;font-size:11px;flex-wrap:wrap}
-.stiming-row span{color:#aaa;font-size:10px}
-.stiming-row input[type=number]{width:46px;padding:2px 4px;font-size:11px;margin-top:0}
-.szone-row{display:flex;align-items:center;gap:2px;margin:2px 0;font-size:11px;flex-wrap:wrap}
-.szone-row span{color:#aaa;font-size:10px;margin-right:2px}
-.szone-row label{display:inline-flex!important;align-items:center;font-size:10px!important;color:#888!important;margin-top:0!important;margin-right:1px}
-.szone-row input[type=checkbox]{width:13px;height:13px;margin:0 1px}
-.ext-box{width:110px;border-radius:10px;padding:10px 6px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px;transition:all 0.3s;flex-shrink:0}
-.ext-box.off{border:1px solid #1a1a2e;background:#16213e}
-.ext-box.on{border:1px solid #f0a030;background:#2d2010}
-.ext-box .edot{width:10px;height:10px;border-radius:50%}
-.ext-box .edot.off{background:#666}
-.ext-box .edot.on{background:#f0a030}
-.ext-box .elabel{font-size:11px;font-weight:bold;line-height:1.2}
-.ext-box .estate{font-size:12px;font-weight:bold}
-.ext-box .estate.off{color:#888}
-.ext-box .estate.on{color:#f0a030}
-.sens-foot{display:flex;justify-content:flex-end;margin-top:4px}
-.sens-upd{background:#3498db;padding:3px 12px;border:none;border-radius:4px;cursor:pointer;font-size:11px;color:#fff}
-.dot.idle{background:#2ecc71}.dot.active{background:#e74c3c}.dot.fault{background:#f39c12}.dot.none{background:#444}
+.sdot.idle{background:#34c759}.sdot.active{background:#ff3b30}.sdot.fault{background:#ff9500}.sdot.none{background:#aeaeb2}
+.srange-row{display:flex;align-items:center;gap:4px;margin:2px 0;font-size:11px}
+.srange-bar{width:8px;height:20px;border-radius:4px;flex-shrink:0}
+.srange-bar.standby{background:#34c759}
+.srange-bar.detected{background:#ff3b30}
+.srange-bar.faultbar{background:#ff9500}
+.srange-row input[type=number]{width:50px;padding:4px 6px;font-size:11px;margin-top:0}
+.srange-label{width:60px;color:#86868b;font-size:10px;text-align:right;font-weight:500}
+.stiming-row{display:flex;align-items:center;gap:4px;margin:3px 0;font-size:11px;flex-wrap:wrap}
+.stiming-row span{color:#86868b;font-size:10px;font-weight:500}
+.stiming-row input[type=number]{width:46px;padding:4px 6px;font-size:11px;margin-top:0}
+.szone-row{display:flex;align-items:center;gap:3px;margin:3px 0;font-size:11px;flex-wrap:wrap}
+.szone-row span{color:#86868b;font-size:10px;margin-right:3px;font-weight:500}
+.szone-row label{display:inline-flex!important;align-items:center;font-size:10px!important;color:#86868b!important;margin-top:0!important;margin-right:2px;font-weight:500}
+.szone-row input[type=checkbox]{width:14px;height:14px;margin:0 1px}
+.ext-box{flex:1;min-width:100px;max-width:130px;border-radius:16px;padding:14px 8px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:6px;transition:all 0.25s ease;flex-shrink:0;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.04)}
+.ext-box.idle{border:1.5px solid #e5e5ea;background:#fff}
+.ext-box.active{border:1.5px solid #ff3b30;background:#fff0f0}
+.ext-box .edot{width:12px;height:12px;border-radius:50%;box-shadow:0 0 0 2px rgba(0,0,0,0.04)}
+.ext-box .edot.idle{background:#34c759}
+.ext-box .edot.active{background:#ff3b30}
+.ext-box .elabel{font-size:12px;font-weight:600;line-height:1.2;color:#1d1d1f;letter-spacing:-0.01em}
+.ext-box .estate{font-size:13px;font-weight:600}
+.ext-box .estate.idle{color:#34c759}
+.ext-box .estate.active{color:#ff3b30}
+.sens-foot{display:flex;justify-content:flex-end;margin-top:8px}
+.sens-upd{background:#0071e3;padding:6px 16px;border:none;border-radius:10px;cursor:pointer;font-size:12px;color:#fff;font-weight:500;letter-spacing:-0.01em;transition:opacity 0.2s,transform 0.1s}
+.sens-upd:hover{opacity:0.88}.sens-upd:active{transform:scale(0.97)}
+.dot.idle{background:#34c759}.dot.active{background:#ff3b30}.dot.fault{background:#ff9500}.dot.none{background:#aeaeb2}
 .range-row{display:flex;align-items:center;gap:6px;margin:4px 0;font-size:12px}
 .range-bar{width:8px;height:24px;border-radius:4px;flex-shrink:0}
-.range-bar.standby{background:#2ecc71}
-.range-bar.detected{background:#e74c3c}
-.range-bar.faultbar{background:#f39c12}
-.range-row input[type=number]{width:62px;padding:3px 6px;font-size:12px}
-.range-label{width:70px;color:#aaa;font-size:12px;text-align:right}
+.range-bar.standby{background:#34c759}
+.range-bar.detected{background:#ff3b30}
+.range-bar.faultbar{background:#ff9500}
+.range-row input[type=number]{width:62px;padding:4px 8px;font-size:12px}
+.range-label{width:70px;color:#86868b;font-size:12px;text-align:right;font-weight:500}
 .timing-row{display:flex;align-items:center;gap:8px;margin:4px 0;font-size:12px;flex-wrap:wrap}
-.timing-row span{color:#aaa}
-.timing-row input[type=number]{width:58px;padding:3px 6px;font-size:12px}
+.timing-row span{color:#86868b;font-weight:500}
+.timing-row input[type=number]{width:58px;padding:4px 8px;font-size:12px}
 .zone-row{display:flex;align-items:center;gap:4px;margin:4px 0;font-size:12px}
-.zone-row span{color:#aaa;margin-right:4px}
+.zone-row span{color:#86868b;margin-right:4px;font-weight:500}
+.sens-params-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.zone-params{display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;background:#f9f9fb;border-radius:10px;padding:12px 14px;margin:0}
+.zone-params-stack{grid-template-columns:1fr}
+.zone-params-field{display:flex;align-items:center;gap:6px}
+.zone-params-field span{font-size:11px;color:#86868b;font-weight:500;white-space:nowrap}
+.zone-params-field input[type=number]{width:56px;padding:5px 8px;font-size:12px;margin-top:0}
+.zone-params-title{grid-column:1/-1;font-size:10px;font-weight:600;color:#1d1d1f;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:-4px}
 </style></head>
 <body>
 <nav>
@@ -383,14 +400,14 @@ small{color:#888}
 <button onclick="showTab('config')" id="tab-config">Config</button>
 </nav>
 <div id="page-dashboard" class="page active"><h1>Alarm ESP</h1>
-<div id="sysInfo" style="font-size:13px;color:#888;margin-bottom:12px">Loading...</div>
+<div id="sysInfo" style="font-size:13px;color:#86868b;margin-bottom:12px">Loading...</div>
 <div class="card"><h2>Zones</h2><div id="zones">Loading...</div></div>
 <div class="card"><h2>Sensors</h2><div id="sensors">Loading...</div></div>
 <div class="card"><h2>Relays</h2><div id="relays">Loading...</div></div>
 <div class="card"><h2>External Sensors</h2><div id="extensors">Loading...</div></div>
 </div>
 <div id="page-extsensors" class="page"><h1>External Sensor Configuration</h1>
-<div id="extSubtitle" style="font-size:11px;color:#888;margin-bottom:16px">Loading...</div>
+<div id="extSubtitle" style="font-size:11px;color:#86868b;margin-bottom:16px">Loading...</div>
 <div id="extCards">Loading...</div>
 <div style="margin-top:12px">
 <button class="btn btn-save" onclick="saveExtSensors()">Save All External</button>
@@ -442,7 +459,7 @@ function rangeClass(raw, lo, hi){
   return '';
 }
 
-function stateColor(state){ return state=='active'?'#e74c3c':state=='fault'?'#f39c12':'#2ecc71'; }
+function stateColor(state){ return state=='active'?'#ff3b30':state=='fault'?'#ff9500':'#34c759'; }
 function dotClass(state){ return state=='active'?'active':state=='fault'?'fault':'idle'; }
 
 function cardClass(s){
@@ -454,7 +471,7 @@ function rangeBar(raw, lo, hi, cls){
   // Show colored bar only if raw falls within this range
   if(raw>=lo && raw<=hi && (lo>0 || hi<65535)) return '<span class="range-bar '+cls+'"></span>';
   if(lo===0 && hi===65535 && cls==='standby') return '<span class="range-bar standby"></span>';
-  return '<span class="range-bar" style="background:#222"></span>';
+  return '<span class="range-bar" style="background:#e5e5ea"></span>';
 }
 
 async function load(){
@@ -475,11 +492,11 @@ function renderExtSensors(a){
     h+='<div class="sensor-row">';
     for(let i=row*8;i<Math.min(row*8+8,a.length);i++){
       let e=a[i];
-      let on=e.active;
-      h+=`<div class="ext-box ${on?'on':'off'}">
-<span class="edot ${on?'on':'off'}"></span>
+      let st=e.active?'active':'idle';
+      h+=`<div class="ext-box ${st}">
+<span class="edot ${st}"></span>
 <span class="elabel">E${e.id}</span>
-<span class="estate ${on?'on':'off'}">${on?'ON':'OFF'}</span>
+<span class="estate ${st}">${e.active?'Active':'Idle'}</span>
 </div>`;
     }
     h+='</div>';
@@ -491,10 +508,18 @@ function renderRelays(a){
   let h='<div class="relay-grid">';
   a.forEach(r=>{
     let on=r.state;
-    h+=`<div class="relay-box ${on?'on':'off'}">
+    let en=r.enabled!==false; // default true
+    h+=`<div class="relay-box ${on?'on':'off'}" style="${en?'':'opacity:0.5'}">
 <span class="rdot ${on?'on':'off'}"></span>
 <span class="rlabel">${r.name}</span>
-<span class="rstate ${on?'on':'off'}">${on?'ON':'OFF'}</span>
+<label class="toggle">
+<input type="checkbox" ${on?'checked':''} onchange="fetch('/api/relay/${r.id}?state='+(this.checked?'ON':'OFF')).then(()=>load())">
+<span class="toggle-slider"></span>
+</label>
+<label style="margin-top:4px;font-size:10px;display:inline-flex;align-items:center;gap:4px;color:#86868b">
+<span>On</span>
+<input type="checkbox" ${en?'checked':''} onchange="fetch('/api/relays/config',{method:'POST',body:new URLSearchParams({r${r.id}_enabled:this.checked?'1':'0'})}).then(()=>load())" style="width:14px;height:14px;margin:0;accent-color:#3498db">
+</label>
 </div>`;
   });
   h+='</div>';
@@ -507,10 +532,10 @@ function renderZones(a){
     let s=z.state;
     let armed=(s!=='disarmed');
     let toggleCls=(s==='alarm')?'alarm-slider':((!armed)?'disarm-slider':'');
-    let labelCls=(s==='armed_idle')?'has-state':((s==='prealarm')?'prealarm-state':((s==='alarm')?'alarm-state':''));
-    let icon=(s==='alarm')?'🚨':(s==='prealarm')?'⏳':(armed?'🔒':'');
+    let labelCls=(s==='armed_idle')?'has-state':((s==='arming')?'arming-state':((s==='prealarm')?'prealarm-state':((s==='disarming')?'disarming-state':((s==='alarm')?'alarm-state':''))));
+    let icon=(s==='alarm')?'🚨':(s==='prealarm'||s=='arming'||s=='disarming')?'⏳':(armed?'🔒':'');
     let sensors=z.sensors||'';
-    let sensHtml=sensors?'<span style="font-size:9px;color:#666;line-height:1.2">'+sensors+'</span>':'';
+    let sensHtml=sensors?'<span style="font-size:9px;color:#aeaeb2;line-height:1.2">'+sensors+'</span>':'';
     h+='<div class="zone-box '+s+'">'+
 '<span class="zone-dot '+s+'"></span>'+
 '<span class="zone-name">'+icon+' '+z.name+'</span>'+
@@ -552,7 +577,7 @@ function renderSensors(a){
 function srangeBar(raw,lo,hi,cls){
   if(raw>=lo && raw<=hi && (lo>0 || hi<65535)) return '<span class="srange-bar '+cls+'"></span>';
   if(lo===0 && hi===65535 && cls==='standby') return '<span class="srange-bar standby"></span>';
-  return '<span class="srange-bar" style="background:#222"></span>';
+  return '<span class="srange-bar" style="background:#e5e5ea"></span>';
 }
 
 function renderSensorCards(a){
@@ -577,37 +602,22 @@ function renderSensorCards(a){
 <div class="sens-live">
 <span class="sdot ${s.type==0?'none':dotClass(s.state)}" id="dot_${s.id}"></span>
 <span id="state_${s.id}">${s.type==0?'disabled':s.state}</span>
-<span id="raw_${s.id}" style="color:${s.type==0?'#888':stateColor(s.state)}">${s.raw} mV</span>
+<span id="raw_${s.id}" style="color:${s.type==0?'#aeaeb2':stateColor(s.state)}">${s.raw} mV</span>
 </div>
 </div>
-<div class="srange-row">
-<span id="bar_sb_${s.id}">${srangeBar(s.raw,standbyLo,standbyHi,'standby')}</span>
-<span class="srange-label">Standby:</span>
-<input type="number" id="s${s.id}_standby_lo" value="${standbyLo}" placeholder="0" min="0" max="65535">
-<span>–</span>
-<input type="number" id="s${s.id}_standby" value="${standbyHi}" placeholder="2000" min="0" max="65535">
-<span>mV</span>
+<div class="sens-params-row">
+<div class="zone-params zone-params-stack">
+<div class="zone-params-title">Voltage thresholds</div>
+<div class="zone-params-field"><span id="bar_sb_${s.id}">${srangeBar(s.raw,standbyLo,standbyHi,'standby')}</span><span>Idle:</span><input type="number" id="s${s.id}_standby_lo" value="${standbyLo}" placeholder="0" min="0" max="65535"><span>–</span><input type="number" id="s${s.id}_standby" value="${standbyHi}" placeholder="2000" min="0" max="65535"><span>mV</span></div>
+<div class="zone-params-field"><span id="bar_dt_${s.id}">${srangeBar(s.raw,detectLo,typeof detectHi==='number'?detectHi:65535,'detected')}</span><span>Active:</span><input type="number" id="s${s.id}_detect" value="${detectLo}" placeholder="8000" min="0" max="65535"><span>–</span><input type="number" id="s${s.id}_detect_hi" value="${detectHi==='max'?'65535':detectHi}" placeholder="max" min="0" max="65535"><span>mV</span></div>
+<div class="zone-params-field"><span id="bar_ft_${s.id}">${srangeBar(s.raw,faultLo,typeof faultHi==='number'?faultHi:65535,'faultbar')}</span><span>Fault:</span><input type="number" id="s${s.id}_fault" value="${faultLo}" placeholder="30000" min="0" max="65535"><span>–</span><input type="number" id="s${s.id}_fault_hi" value="${faultHi==='max'?'65535':faultHi}" placeholder="max" min="0" max="65535"><span>mV</span></div>
 </div>
-<div class="srange-row">
-<span id="bar_dt_${s.id}">${srangeBar(s.raw,detectLo,typeof detectHi==='number'?detectHi:65535,'detected')}</span>
-<span class="srange-label">Detected:</span>
-<input type="number" id="s${s.id}_detect" value="${detectLo}" placeholder="8000" min="0" max="65535">
-<span>–</span>
-<input type="number" id="s${s.id}_detect_hi" value="${detectHi==='max'?'65535':detectHi}" placeholder="max" min="0" max="65535">
-<span>mV</span>
+<div class="zone-params zone-params-stack">
+<div class="zone-params-title">Timing</div>
+<div class="zone-params-field"><span>Debouncing:</span><input type="number" id="s${s.id}_debounce" value="${s.debounceMs}" min="0" max="5000"><span>ms</span></div>
+<div class="zone-params-field"><span>Active after:</span><input type="number" id="s${s.id}_ondelay" value="${s.onDelayMs}" min="0" max="60000"><span>ms</span></div>
+<div class="zone-params-field"><span>Idle after:</span><input type="number" id="s${s.id}_offdelay" value="${s.offDelayMs}" min="0" max="60000"><span>ms</span></div>
 </div>
-<div class="srange-row">
-<span id="bar_ft_${s.id}">${srangeBar(s.raw,faultLo,typeof faultHi==='number'?faultHi:65535,'faultbar')}</span>
-<span class="srange-label">Fault:</span>
-<input type="number" id="s${s.id}_fault" value="${faultLo}" placeholder="30000" min="0" max="65535">
-<span>–</span>
-<input type="number" id="s${s.id}_fault_hi" value="${faultHi==='max'?'65535':faultHi}" placeholder="max" min="0" max="65535">
-<span>mV</span>
-</div>
-<div class="stiming-row">
-<span>Db:</span><input type="number" id="s${s.id}_debounce" value="${s.debounceMs}" min="0" max="5000"><span>ms</span>
-<span>On:</span><input type="number" id="s${s.id}_ondelay" value="${s.onDelayMs}" min="0" max="60000"><span>ms</span>
-<span>Off:</span><input type="number" id="s${s.id}_offdelay" value="${s.offDelayMs}" min="0" max="60000"><span>ms</span>
 </div>
 <div class="szone-row">
 <span>Zones:</span>`;
@@ -627,13 +637,16 @@ async function renderZoneCards(a){
 <div class="sens-top">
 <span class="sid">Z${z.id}</span>
 <input type="text" id="z${z.id}_name" value="${z.name||''}" placeholder="Name">
-<span class="ztoggle"><input type="checkbox" id="z${z.id}_enabled" ${z.enabled?'checked':''}><span class="toggle-on"></span></span>
+<span class="ztoggle"><input type="checkbox" id="z${z.id}_enabled" ${z.enabled?'checked':''}><span class="toggle-on"></span><span style="font-size:10px;color:#86868b;margin-left:4px">Enable</span></span>
 </div>
-<div class="stiming-row">
-<span>Exit:</span><input type="number" id="z${z.id}_exit" value="${z.exitDelayS}" min="0" max="120"><span>s</span>
-<span>Entry:</span><input type="number" id="z${z.id}_entry" value="${z.entryDelayS}" min="0" max="120"><span>s</span>
+<div class="zone-params">
+<div class="zone-params-field"><span>Exit Delay:</span><input type="number" id="z${z.id}_exit" value="${z.exitDelayS}" min="0" max="120"><span>s</span></div>
+<div class="zone-params-field"><span>Entry Delay:</span><input type="number" id="z${z.id}_entry" value="${z.entryDelayS}" min="0" max="120"><span>s</span></div>
+<div class="zone-params-title">Siren cycle</div>
+<div class="zone-params-field"><span>ON for:</span><input type="number" id="z${z.id}_sirenOn" value="${z.sirenOnS||0}" min="0" max="255"><span>s</span></div>
+<div class="zone-params-field"><span>OFF for:</span><input type="number" id="z${z.id}_sirenOff" value="${z.sirenOffS||0}" min="0" max="255"><span>s</span></div>
 </div>
-${sensors?`<div style="font-size:10px;color:#888;margin:2px 0">Sensors: ${sensors}</div>`:''}
+${sensors?`<div style="font-size:10px;color:#86868b;margin:2px 0">Sensors: ${sensors}</div>`:''}
 <div class="sens-foot"><button class="sens-upd" onclick="saveZones()">Update</button></div>
 </div>`;
   });
@@ -646,6 +659,8 @@ async function saveZones(){
     body.set('z'+i+'_name',document.getElementById('z'+i+'_name')?.value||'');
     body.set('z'+i+'_exit',document.getElementById('z'+i+'_exit')?.value||'5');
     body.set('z'+i+'_entry',document.getElementById('z'+i+'_entry')?.value||'10');
+    body.set('z'+i+'_sirenOn',document.getElementById('z'+i+'_sirenOn')?.value||'0');
+    body.set('z'+i+'_sirenOff',document.getElementById('z'+i+'_sirenOff')?.value||'0');
     body.set('z'+i+'_enabled',document.getElementById('z'+i+'_enabled')?.checked?'1':'0');
   }
   const r=await fetch('/api/zones',{method:'POST',body});
@@ -657,11 +672,17 @@ async function saveZones(){
 async function renderExtCards(a){
   let h='';
   a.forEach(e=>{
-    h+=`<div class="sens-card">
+    let st=e.enabled?(e.active?'active':'idle'):'disabled';
+    let stateLabel=e.enabled?(e.active?'Active':'Idle'):'disabled';
+    h+=`<div class="sens-card ${st}" id="ecard_${e.id}">
 <div class="sens-top">
 <span class="sid">E${e.id}</span>
 <input type="text" id="e${e.id}_name" value="${e.name||''}" placeholder="Name">
 <span class="ztoggle"><input type="checkbox" id="e${e.id}_enabled" ${e.enabled?'checked':''}><span class="toggle-on"></span></span>
+<div class="sens-live">
+<span class="sdot ${e.enabled?(e.active?'active':'idle'):'none'}" id="edot_${e.id}"></span>
+<span id="estate_${e.id}">${stateLabel}</span>
+</div>
 </div>
 <div class="szone-row"><span>Zones:</span>`;
     for(let z=1;z<=8;z++) h+=`<label><input type="checkbox" id="e${e.id}_z${z}" ${(e.zoneMask&(1<<(z-1)))?'checked':''}>Z${z}</label>`;
@@ -693,6 +714,21 @@ async function saveExtSensors(){
 
 async function loadSensors(){const r=await fetch('/api/sensors');renderSensorCards(await r.json());}
 
+async function refreshExtLive(){
+  const r=await fetch('/api/extsensors');
+  const a=await r.json();
+  a.forEach(e=>{
+    let card=document.getElementById('ecard_'+e.id);
+    if(!card) return;
+    let st=e.enabled?(e.active?'active':'idle'):'disabled';
+    card.className='sens-card '+st;
+    let dot=document.getElementById('edot_'+e.id);
+    if(dot){ dot.className='sdot '+(e.enabled?(e.active?'active':'idle'):'none'); }
+    let stEl=document.getElementById('estate_'+e.id);
+    if(stEl){ stEl.textContent=e.enabled?(e.active?'Active':'Idle'):'disabled'; }
+  });
+}
+
 let sensorRefreshTimer=null;
 async function refreshSensorLive(){
   const r=await fetch('/api/sensors');
@@ -707,7 +743,7 @@ async function refreshSensorLive(){
     let st=document.getElementById('state_'+s.id);
     if(st){ st.textContent=s.type==0?'disabled':s.state; }
     let rw=document.getElementById('raw_'+s.id);
-    if(rw){ rw.textContent=s.raw+' mV'; rw.style.color=s.type==0?'#888':stateColor(s.state); }
+    if(rw){ rw.textContent=s.raw+' mV'; rw.style.color=s.type==0?'#aeaeb2':stateColor(s.state); }
     let sLo=s.standbyMin||0, sHi=s.standbyMax||2000;
     let dLo=s.detectMin||8000, dHi=(s.detectMax===65535||s.detectMax===0)?65535:s.detectMax;
     let fLo=s.faultMin||30000, fHi=(s.faultMax===65535||s.faultMax===0)?65535:s.faultMax;
@@ -775,7 +811,7 @@ function showTab(t){
   if(t=='config')loadNetCfg();
   if(t=='sensors'){loadSensors();sensorRefreshTimer=setInterval(refreshSensorLive,2000);}
   if(t=='zones')loadZones();
-  if(t=='extsensors')loadExtSensors();
+  if(t=='extsensors'){loadExtSensors();sensorRefreshTimer=setInterval(refreshExtLive,2000);}
 }
 async function uploadFirmware(){
   const file=document.getElementById('otaFile').files[0];
@@ -807,6 +843,7 @@ static void apiExtSensorsConfig(AsyncWebServerRequest *req) {
       e["name"]     = config.extSensors[i].name;
       e["enabled"]  = config.extSensors[i].enabled;
       e["zoneMask"] = config.extSensors[i].zoneMask;
+      e["active"]   = extSensorStates[i].active;
     }
     String buf;
     serializeJson(doc, buf);
@@ -840,6 +877,8 @@ static void apiZonesConfig(AsyncWebServerRequest *req) {
       z["name"]        = config.zones[i].name;
       z["entryDelayS"] = config.zones[i].entryDelayS;
       z["exitDelayS"]  = config.zones[i].exitDelayS;
+      z["sirenOnS"]    = config.zones[i].sirenOnS;
+      z["sirenOffS"]   = config.zones[i].sirenOffS;
       z["enabled"]     = config.zones[i].enabled;
     // Collect associated sensor labels
     String sensList;
@@ -872,6 +911,12 @@ static void apiZonesConfig(AsyncWebServerRequest *req) {
       }
       if (req->hasArg((prefix + "_exit").c_str())) {
         config.zones[i].exitDelayS = req->arg((prefix + "_exit").c_str()).toInt();
+      }
+      if (req->hasArg((prefix + "_sirenOn").c_str())) {
+        config.zones[i].sirenOnS = req->arg((prefix + "_sirenOn").c_str()).toInt();
+      }
+      if (req->hasArg((prefix + "_sirenOff").c_str())) {
+        config.zones[i].sirenOffS = req->arg((prefix + "_sirenOff").c_str()).toInt();
       }
       config.zones[i].enabled = (req->arg((prefix + "_enabled").c_str()) != "0");
     }
@@ -940,6 +985,23 @@ void initWebServer() {
   for (int r = 1; r <= MAX_RELAYS; r++) {
     server.on(("/api/relay/" + String(r)).c_str(), HTTP_GET, apiRelayCommand);
   }
+
+  server.on("/api/relays/config", HTTP_POST, [](AsyncWebServerRequest *req) {
+    for (int i = 0; i < MAX_RELAYS; i++) {
+      String prefix = "r" + String(i + 1);
+      String keyName = prefix + "_name";
+      String keyEnabled = prefix + "_enabled";
+      if (req->hasArg(keyName.c_str())) {
+        String v = req->arg(keyName.c_str());
+        strlcpy(config.relays[i].name, v.c_str(), sizeof(config.relays[i].name));
+      }
+      if (req->hasArg(keyEnabled.c_str())) {
+        config.relays[i].enabled = (req->arg(keyEnabled.c_str()) != "0");
+      }
+    }
+    saveConfig();
+    req->send(200, "application/json", "{\"ok\":true}");
+  });
 
   server.begin();
 }

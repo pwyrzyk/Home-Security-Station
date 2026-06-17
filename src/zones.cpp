@@ -16,8 +16,12 @@ void zoneArm(uint8_t zoneId) {
   uint8_t idx = zoneId - 1;
   if (zoneStates[idx].alarmState == ZONE_DISARMED) {
     zoneStates[idx].armed = true;
-    zoneStates[idx].alarmState = ZONE_ARMED_IDLE;
     zoneStates[idx].armedAtMs = millis();
+    if (config.zones[idx].exitDelayS > 0) {
+      zoneStates[idx].alarmState = ZONE_ARMING;
+    } else {
+      zoneStates[idx].alarmState = ZONE_ARMED_IDLE;
+    }
     notifyZoneChange(zoneId);
   }
 }
@@ -28,6 +32,8 @@ void zoneDisarm(uint8_t zoneId) {
   zoneStates[idx].armed = false;
   zoneStates[idx].alarmState = ZONE_DISARMED;
   zoneStates[idx].preAlarmStartMs = 0;
+  zoneStates[idx].sirenPhaseMs = 0;
+  zoneStates[idx].sirenOn = false;
   notifyZoneChange(zoneId);
 }
 
@@ -47,7 +53,8 @@ void disarmAllZones() {
 
 bool isZoneArmed(uint8_t zoneId) {
   if (zoneId < 1 || zoneId > MAX_ZONES) return false;
-  return zoneStates[zoneId - 1].armed;
+  uint8_t idx = zoneId - 1;
+  return zoneStates[idx].armed && zoneStates[idx].alarmState != ZONE_DISARMED;
 }
 
 ZoneAlarmState getZoneState(uint8_t zoneId) {
@@ -60,6 +67,8 @@ const char* zoneAlarmStateStr(ZoneAlarmState s) {
     case ZONE_ARMED_IDLE: return "armed_idle";
     case ZONE_PREALARM:   return "prealarm";
     case ZONE_ALARM:      return "alarm";
+    case ZONE_ARMING:     return "arming";
+    case ZONE_DISARMING:  return "disarming";
     default:              return "disarmed";
   }
 }
@@ -69,6 +78,8 @@ const char* zoneAlarmStateLabel(ZoneAlarmState s) {
     case ZONE_ARMED_IDLE: return "Armed";
     case ZONE_PREALARM:   return "Pre-alarm";
     case ZONE_ALARM:      return "Alarm";
+    case ZONE_ARMING:     return "Arming...";
+    case ZONE_DISARMING:  return "Disarming...";
     default:              return "Disarmed";
   }
 }
