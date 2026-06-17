@@ -1,0 +1,119 @@
+#include <Arduino.h>
+
+#include "config.h"
+#include "hardware.h"
+#include "sensors.h"
+#include "zones.h"
+#include "alarm.h"
+#include "network.h"
+#include "mqtt.h"
+#include "ha_discovery.h"
+#include "web.h"
+
+// ─── Sensor poll interval ──────────────────────────────────────────────────
+static uint32_t lastSensorReadMs = 0;
+#define SENSOR_READ_MS 100
+
+void setup() {
+  Serial.begin(115200);
+  delay(100);
+  Serial.println("\n\n[BOT] Alarm ESP booting...");
+  Serial.printf("[BOT] Firmware: %s\n", FIRMWARE_VERSION);
+
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);   // LED on during boot
+
+  Serial.println("[BOT] Loading config...");
+  loadConfig();
+  computeDeviceIdentifiers();
+  Serial.printf("[BOT] Device ID: %s\n", deviceId.c_str());
+
+  Serial.println("[BOT] Init hardware...");
+  initHardware();
+
+  // Disarm all zones on boot
+  Serial.println("[BOT] Disarming zones...");
+  disarmAllZones();
+
+  // Network
+  Serial.println("[BOT] Starting WiFi...");
+  ensureWiFiMode();
+  Serial.printf("[BOT] WiFi: %s (AP=%s)\n", wifiConnected ? "connected" : "failed", apMode ? "yes" : "no");
+  if (wifiConnected && !apMode) {
+    configTime(TZ_OFFSET_SEC, 0, NTP_SERVER);
+  }
+
+  Serial.println("[BOT] Init OTA...");
+  initOTA();
+  mqttApplyServerConfig();
+  mqtt.setCallback(mqttCallback);
+  mqtt.setBufferSize(2048);
+
+  Serial.println("[BOT] Init web server...");
+  initWebServer();
+
+  if (wifiConnected && !apMode) {
+    connectMQTT();
+  }
+
+  setupMQTT();
+
+  digitalWrite(LED_BUILTIN, LOW);     // boot complete
+}
+
+void loop() {
+  // ─── WiFi watchdog ─────────────────────────────────────────────────────
+  if (!apMode) {
+    if (WiFi.status() != WL_CONNECTED) {
+      wifiConnected = false;
+      ensureWiFiMode();
+    } else {
+      wifiConnected = true;
+    }
+  }
+
+  // ─── OTA + mDNS ────────────────────────────────────────────────────────
+  ArduinoOTA.handle();
+
+  // ─── Sensor read + state machine ───────────────────────────────────────
+  uint32_t now = millis();
+  if (now - lastSensorReadMs >= SENSOR_READ_MS) {
+    lastSensorReadMs = now;
+    readAllAdcChannels();
+    readDigitalInputs();
+    sensorsLoop();
+  }
+
+  // ─── Alarm engine ──────────────────────────────────────────────────────
+  alarmLoop();
+
+  // ─── NTP ────────────────────────────────────────────────────────────
+  syncNTP();
+
+  // ─── MQTT ───────────────────────────────────────────────────────────
+  if (wifiConnected && !mqtt.connected()) {
+    connectMQTT();
+  }
+  mqtt.loop();
+  mqttFlushPostConnect();
+  mqttStatusLoop();
+
+  // ─── Status LED: fast blink during prealarm, slow blink during alarm ───
+  static uint32_t lastLedBlink = 0;
+  bool anyPrealarm = false, anyAlarm = false;
+  for (int z = 0; z < MAX_ZONES; z++) {
+    if (zoneStates[z].alarmState == ZONE_PREALARM) anyPrealarm = true;
+    if (zoneStates[z].alarmState == ZONE_ALARM)     anyAlarm    = true;
+  }
+  uint32_t blinkRate = anyAlarm ? 500 : (anyPrealarm ? 200 : 0);
+  if (blinkRate > 0) {
+    if (now - lastLedBlink >= blinkRate) {
+      lastLedBlink = now;
+      digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+    }
+  } else {
+    digitalWrite(LED_BUILTIN, LOW);
+  }
+
+  delay(2);
+}

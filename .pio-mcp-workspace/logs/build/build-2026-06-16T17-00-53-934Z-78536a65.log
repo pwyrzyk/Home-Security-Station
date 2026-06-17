@@ -1,0 +1,271 @@
+Processing esp32-c3-devkitm-1 (platform: espressif32; board: esp32-c3-devkitm-1; framework: arduino)
+--------------------------------------------------------------------------------
+Verbose mode can be enabled via `-v, --verbose` option
+CONFIGURATION: https://docs.platformio.org/page/boards/espressif32/esp32-c3-devkitm-1.html
+PLATFORM: Espressif 32 (7.0.1) > Espressif ESP32-C3-DevKitM-1
+HARDWARE: ESP32C3 160MHz, 320KB RAM, 4MB Flash
+DEBUG: Current (cmsis-dap) External (cmsis-dap, esp-bridge, esp-builtin, esp-prog, iot-bus-jtag, jlink, minimodule, olimex-arm-usb-ocd, olimex-arm-usb-ocd-h, olimex-arm-usb-tiny-h, olimex-jtag-tiny, tumpa)
+PACKAGES: 
+ - framework-arduinoespressif32 @ 3.20017.241212+sha.dcc1105b 
+ - tool-esptoolpy @ 2.41100.0 (4.11.0) 
+ - toolchain-riscv32-esp @ 8.4.0+2021r2-patch5
+LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+LDF Modes: Finder ~ chain, Compatibility ~ soft
+Found 39 compatible libraries
+Scanning dependencies...
+Dependency Graph
+|-- Adafruit ADS1X15 @ 2.6.2
+|-- PubSubClient @ 2.8.0
+|-- ESPAsyncWebServer-esphome @ 3.4.1
+|-- ArduinoJson @ 7.4.3
+|-- EEPROM @ 2.0.0
+|-- WiFi @ 2.0.0
+|-- ArduinoOTA @ 2.0.0
+|-- ESPmDNS @ 2.0.0
+Building in release mode
+Compiling .pio/build/esp32-c3-devkitm-1/src/alarm.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/src/config.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/src/ha_discovery.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/src/hardware.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/src/main.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/src/mqtt.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/src/network.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/src/sensors.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/src/web.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/src/zones.cpp.o
+Building .pio/build/esp32-c3-devkitm-1/bootloader.bin
+esptool.py v4.11.0
+Creating esp32c3 image...
+Merged 1 ELF section
+Successfully created esp32c3 image.
+Generating partitions .pio/build/esp32-c3-devkitm-1/partitions.bin
+Compiling .pio/build/esp32-c3-devkitm-1/lib1a6/Wire/Wire.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/lib5ef/SPI/SPI.cpp.o
+src/ha_discovery.cpp: In function 'void publishBinarySensor(uint8_t, const SensorConfig&)':
+src/ha_discovery.cpp:9:26: warning: 'DynamicJsonDocument' is deprecated: use JsonDocument instead [-Wdeprecated-declarations]
+   DynamicJsonDocument doc(1024);
+                          ^
+In file included from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.hpp:65,
+                 from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.h:9,
+                 from src/ha_discovery.cpp:6:
+.pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson/compatibility.hpp:125:58: note: declared here
+ class ARDUINOJSON_DEPRECATED("use JsonDocument instead") DynamicJsonDocument
+                                                          ^~~~~~~~~~~~~~~~~~~
+src/ha_discovery.cpp: In function 'void publishAlarmControlPanel(uint8_t)':
+src/ha_discovery.cpp:36:26: warning: 'DynamicJsonDocument' is deprecated: use JsonDocument instead [-Wdeprecated-declarations]
+   DynamicJsonDocument doc(1024);
+                          ^
+In file included from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.hpp:65,
+                 from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.h:9,
+                 from src/ha_discovery.cpp:6:
+.pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson/compatibility.hpp:125:58: note: declared here
+ class ARDUINOJSON_DEPRECATED("use JsonDocument instead") DynamicJsonDocument
+                                                          ^~~~~~~~~~~~~~~~~~~
+src/ha_discovery.cpp: In function 'void publishSwitchRelay(uint8_t)':
+src/ha_discovery.cpp:64:26: warning: 'DynamicJsonDocument' is deprecated: use JsonDocument instead [-Wdeprecated-declarations]
+   DynamicJsonDocument doc(1024);
+                          ^
+In file included from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.hpp:65,
+                 from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.h:9,
+                 from src/ha_discovery.cpp:6:
+.pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson/compatibility.hpp:125:58: note: declared here
+ class ARDUINOJSON_DEPRECATED("use JsonDocument instead") DynamicJsonDocument
+                                                          ^~~~~~~~~~~~~~~~~~~
+Compiling .pio/build/esp32-c3-devkitm-1/lib0eb/Adafruit BusIO/Adafruit_BusIO_Register.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/lib0eb/Adafruit BusIO/Adafruit_GenericDevice.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/lib0eb/Adafruit BusIO/Adafruit_I2CDevice.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/lib0eb/Adafruit BusIO/Adafruit_SPIDevice.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/lib849/Adafruit ADS1X15/Adafruit_ADS1X15.cpp.o
+src/web.cpp: In function 'void apiStatus(AsyncWebServerRequest*)':
+src/web.cpp:14:26: warning: 'DynamicJsonDocument' is deprecated: use JsonDocument instead [-Wdeprecated-declarations]
+   DynamicJsonDocument doc(8192);
+                          ^
+In file included from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.hpp:65,
+                 from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.h:9,
+                 from src/web.cpp:7:
+.pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson/compatibility.hpp:125:58: note: declared here
+ class ARDUINOJSON_DEPRECATED("use JsonDocument instead") DynamicJsonDocument
+                                                          ^~~~~~~~~~~~~~~~~~~
+src/web.cpp:22:51: warning: 'ArduinoJson::V743PB22::JsonArray ArduinoJson::V743PB22::JsonObject::createNestedArray(TChar*) const [with TChar = const char]' is deprecated: use obj[key].to<JsonArray>() instead [-Wdeprecated-declarations]
+   JsonArray zones = root.createNestedArray("zones");
+                                                   ^
+In file included from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.hpp:39,
+                 from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.h:9,
+                 from src/web.cpp:7:
+.pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson/Object/JsonObject.hpp:197:13: note: declared here
+   JsonArray createNestedArray(TChar* key) const {
+             ^~~~~~~~~~~~~~~~~
+src/web.cpp:24:45: warning: 'ArduinoJson::V743PB22::JsonObject ArduinoJson::V743PB22::JsonArray::createNestedObject() const' is deprecated: use add<JsonObject>() instead [-Wdeprecated-declarations]
+     JsonObject z = zones.createNestedObject();
+                                             ^
+In file included from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.hpp:65,
+                 from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.h:9,
+                 from src/web.cpp:7:
+.pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson/compatibility.hpp:140:19: note: declared here
+ inline JsonObject JsonArray::createNestedObject() const {
+                   ^~~~~~~~~
+src/web.cpp:32:55: warning: 'ArduinoJson::V743PB22::JsonArray ArduinoJson::V743PB22::JsonObject::createNestedArray(TChar*) const [with TChar = const char]' is deprecated: use obj[key].to<JsonArray>() instead [-Wdeprecated-declarations]
+   JsonArray sensors = root.createNestedArray("sensors");
+                                                       ^
+In file included from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.hpp:39,
+                 from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.h:9,
+                 from src/web.cpp:7:
+.pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson/Object/JsonObject.hpp:197:13: note: declared here
+   JsonArray createNestedArray(TChar* key) const {
+             ^~~~~~~~~~~~~~~~~
+src/web.cpp:34:47: warning: 'ArduinoJson::V743PB22::JsonObject ArduinoJson::V743PB22::JsonArray::createNestedObject() const' is deprecated: use add<JsonObject>() instead [-Wdeprecated-declarations]
+     JsonObject s = sensors.createNestedObject();
+                                               ^
+In file included from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.hpp:65,
+                 from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.h:9,
+                 from src/web.cpp:7:
+.pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson/compatibility.hpp:140:19: note: declared here
+ inline JsonObject JsonArray::createNestedObject() const {
+                   ^~~~~~~~~
+src/web.cpp:43:53: warning: 'ArduinoJson::V743PB22::JsonArray ArduinoJson::V743PB22::JsonObject::createNestedArray(TChar*) const [with TChar = const char]' is deprecated: use obj[key].to<JsonArray>() instead [-Wdeprecated-declarations]
+   JsonArray relays = root.createNestedArray("relays");
+                                                     ^
+In file included from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.hpp:39,
+                 from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.h:9,
+                 from src/web.cpp:7:
+.pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson/Object/JsonObject.hpp:197:13: note: declared here
+   JsonArray createNestedArray(TChar* key) const {
+             ^~~~~~~~~~~~~~~~~
+src/web.cpp:45:46: warning: 'ArduinoJson::V743PB22::JsonObject ArduinoJson::V743PB22::JsonArray::createNestedObject() const' is deprecated: use add<JsonObject>() instead [-Wdeprecated-declarations]
+     JsonObject r = relays.createNestedObject();
+                                              ^
+In file included from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.hpp:65,
+                 from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.h:9,
+                 from src/web.cpp:7:
+.pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson/compatibility.hpp:140:19: note: declared here
+ inline JsonObject JsonArray::createNestedObject() const {
+                   ^~~~~~~~~
+src/web.cpp:52:48: warning: 'ArduinoJson::V743PB22::JsonArray ArduinoJson::V743PB22::JsonObject::createNestedArray(TChar*) const [with TChar = const char]' is deprecated: use obj[key].to<JsonArray>() instead [-Wdeprecated-declarations]
+   JsonArray dins = root.createNestedArray("din");
+                                                ^
+In file included from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.hpp:39,
+                 from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.h:9,
+                 from src/web.cpp:7:
+.pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson/Object/JsonObject.hpp:197:13: note: declared here
+   JsonArray createNestedArray(TChar* key) const {
+             ^~~~~~~~~~~~~~~~~
+src/web.cpp:54:44: warning: 'ArduinoJson::V743PB22::JsonObject ArduinoJson::V743PB22::JsonArray::createNestedObject() const' is deprecated: use add<JsonObject>() instead [-Wdeprecated-declarations]
+     JsonObject d = dins.createNestedObject();
+                                            ^
+In file included from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.hpp:65,
+                 from .pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson.h:9,
+                 from src/web.cpp:7:
+.pio/libdeps/esp32-c3-devkitm-1/ArduinoJson/src/ArduinoJson/compatibility.hpp:140:19: note: declared here
+ inline JsonObject JsonArray::createNestedObject() const {
+                   ^~~~~~~~~
+Compiling .pio/build/esp32-c3-devkitm-1/libb80/PubSubClient/PubSubClient.cpp.o
+Archiving .pio/build/esp32-c3-devkitm-1/lib1a6/libWire.a
+Archiving .pio/build/esp32-c3-devkitm-1/lib5ef/libSPI.a
+Compiling .pio/build/esp32-c3-devkitm-1/libf3a/AsyncTCP-esphome/AsyncTCP.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/lib45c/FS/FS.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/lib45c/FS/vfs_api.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/libd03/WiFi/WiFi.cpp.o
+Archiving .pio/build/esp32-c3-devkitm-1/lib0eb/libAdafruit BusIO.a
+Compiling .pio/build/esp32-c3-devkitm-1/libd03/WiFi/WiFiAP.cpp.o
+Indexing .pio/build/esp32-c3-devkitm-1/lib1a6/libWire.a
+Indexing .pio/build/esp32-c3-devkitm-1/lib5ef/libSPI.a
+Archiving .pio/build/esp32-c3-devkitm-1/lib849/libAdafruit ADS1X15.a
+Indexing .pio/build/esp32-c3-devkitm-1/lib0eb/libAdafruit BusIO.a
+Indexing .pio/build/esp32-c3-devkitm-1/lib849/libAdafruit ADS1X15.a
+Compiling .pio/build/esp32-c3-devkitm-1/libd03/WiFi/WiFiClient.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/libd03/WiFi/WiFiGeneric.cpp.o
+Archiving .pio/build/esp32-c3-devkitm-1/libb80/libPubSubClient.a
+Compiling .pio/build/esp32-c3-devkitm-1/libd03/WiFi/WiFiMulti.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/libd03/WiFi/WiFiSTA.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/libd03/WiFi/WiFiScan.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/libd03/WiFi/WiFiServer.cpp.o
+Archiving .pio/build/esp32-c3-devkitm-1/libf3a/libAsyncTCP-esphome.a
+Archiving .pio/build/esp32-c3-devkitm-1/lib45c/libFS.a
+Compiling .pio/build/esp32-c3-devkitm-1/libd03/WiFi/WiFiUdp.cpp.o
+Indexing .pio/build/esp32-c3-devkitm-1/libb80/libPubSubClient.a
+Indexing .pio/build/esp32-c3-devkitm-1/libf3a/libAsyncTCP-esphome.a
+Indexing .pio/build/esp32-c3-devkitm-1/lib45c/libFS.a
+Compiling .pio/build/esp32-c3-devkitm-1/lib346/ESPAsyncWebServer-esphome/AsyncEventSource.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/lib346/ESPAsyncWebServer-esphome/AsyncWebSocket.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/lib346/ESPAsyncWebServer-esphome/WebAuthentication.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/lib346/ESPAsyncWebServer-esphome/WebHandlers.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/lib346/ESPAsyncWebServer-esphome/WebRequest.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/lib346/ESPAsyncWebServer-esphome/WebResponses.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/lib346/ESPAsyncWebServer-esphome/WebServer.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/libe9a/EEPROM/EEPROM.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/lib390/Update/HttpsOTAUpdate.cpp.o
+Archiving .pio/build/esp32-c3-devkitm-1/libd03/libWiFi.a
+Indexing .pio/build/esp32-c3-devkitm-1/libd03/libWiFi.a
+Compiling .pio/build/esp32-c3-devkitm-1/lib390/Update/Updater.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/libc99/ESPmDNS/ESPmDNS.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/liba91/ArduinoOTA/ArduinoOTA.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/Esp.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/FirmwareMSC.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/FunctionalInterrupt.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/HWCDC.cpp.o
+Archiving .pio/build/esp32-c3-devkitm-1/libe9a/libEEPROM.a
+Archiving .pio/build/esp32-c3-devkitm-1/lib390/libUpdate.a
+Indexing .pio/build/esp32-c3-devkitm-1/libe9a/libEEPROM.a
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/HardwareSerial.cpp.o
+Indexing .pio/build/esp32-c3-devkitm-1/lib390/libUpdate.a
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/IPAddress.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/IPv6Address.cpp.o
+Archiving .pio/build/esp32-c3-devkitm-1/libc99/libESPmDNS.a
+Archiving .pio/build/esp32-c3-devkitm-1/lib346/libESPAsyncWebServer-esphome.a
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/MD5Builder.cpp.o
+Indexing .pio/build/esp32-c3-devkitm-1/libc99/libESPmDNS.a
+Indexing .pio/build/esp32-c3-devkitm-1/lib346/libESPAsyncWebServer-esphome.a
+Archiving .pio/build/esp32-c3-devkitm-1/liba91/libArduinoOTA.a
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/Print.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/Stream.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/StreamString.cpp.o
+Indexing .pio/build/esp32-c3-devkitm-1/liba91/libArduinoOTA.a
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/Tone.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/USB.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/USBCDC.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/USBMSC.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/WMath.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/WString.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/base64.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/cbuf.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/esp32-hal-adc.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/esp32-hal-bt.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/esp32-hal-cpu.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/esp32-hal-dac.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/esp32-hal-gpio.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/esp32-hal-i2c-slave.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/esp32-hal-i2c.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/esp32-hal-ledc.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/esp32-hal-matrix.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/esp32-hal-misc.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/esp32-hal-psram.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/esp32-hal-rgb-led.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/esp32-hal-rmt.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/esp32-hal-sigmadelta.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/esp32-hal-spi.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/esp32-hal-time.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/esp32-hal-timer.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/esp32-hal-tinyusb.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/esp32-hal-touch.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/esp32-hal-uart.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/firmware_msc_fat.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/libb64/cdecode.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/libb64/cencode.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/main.cpp.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/stdlib_noniso.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/wiring_pulse.c.o
+Compiling .pio/build/esp32-c3-devkitm-1/FrameworkArduino/wiring_shift.c.o
+Archiving .pio/build/esp32-c3-devkitm-1/libFrameworkArduino.a
+Indexing .pio/build/esp32-c3-devkitm-1/libFrameworkArduino.a
+Linking .pio/build/esp32-c3-devkitm-1/firmware.elf
+Retrieving maximum program size .pio/build/esp32-c3-devkitm-1/firmware.elf
+Checking size .pio/build/esp32-c3-devkitm-1/firmware.elf
+Advanced Memory Usage is available via "PlatformIO Home > Project Inspect"
+RAM:   [=         ]  13.8% (used 45276 bytes from 327680 bytes)
+Flash: [======    ]  64.3% (used 843242 bytes from 1310720 bytes)
+Building .pio/build/esp32-c3-devkitm-1/firmware.bin
+esptool.py v4.11.0
+Creating esp32c3 image...
+Merged 2 ELF sections
+Successfully created esp32c3 image.
+========================= [SUCCESS] Took 18.60 seconds =========================
