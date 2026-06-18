@@ -65,6 +65,8 @@ static void apiStatus(AsyncWebServerRequest *req) {
     r["name"]    = config.relays[i].name;
     r["state"]   = relayStates[i];
     r["enabled"] = config.relays[i].enabled;
+    r["mode"]    = (int)config.relays[i].mode;
+    r["zoneId"]  = config.relays[i].zoneId;
   }
 
   JsonArray dins = root["din"].to<JsonArray>();
@@ -232,7 +234,10 @@ static void apiRelayCommand(AsyncWebServerRequest *req) {
   String state  = req->arg("state");
   if (relayId >= 1 && relayId <= MAX_RELAYS) {
     bool on = (state == "ON" || state == "1" || state == "true");
-    setRelay(relayId - 1, on);
+    uint8_t idx = relayId - 1;
+    relayManualOverride[idx] = true;
+    relayManualState[idx] = on;
+    setRelay(idx, on);
   }
   req->send(200, "application/json", "{\"ok\":true}");
 }
@@ -468,7 +473,6 @@ function cardClass(s){
 }
 
 function rangeBar(raw, lo, hi, cls){
-  // Show colored bar only if raw falls within this range
   if(raw>=lo && raw<=hi && (lo>0 || hi<65535)) return '<span class="range-bar '+cls+'"></span>';
   if(lo===0 && hi===65535 && cls==='standby') return '<span class="range-bar standby"></span>';
   return '<span class="range-bar" style="background:#e5e5ea"></span>';
@@ -508,7 +512,7 @@ function renderRelays(a){
   let h='<div class="relay-grid">';
   a.forEach(r=>{
     let on=r.state;
-    let en=r.enabled!==false; // default true
+    let en=r.enabled!==false;
     h+=`<div class="relay-box ${on?'on':'off'}" style="${en?'':'opacity:0.5'}">
 <span class="rdot ${on?'on':'off'}"></span>
 <span class="rlabel">${r.name}</span>
@@ -636,7 +640,7 @@ async function renderZoneCards(a){
     h+=`<div class="sens-card">
 <div class="sens-top">
 <span class="sid">Z${z.id}</span>
-<input type="text" id="z${z.id}_name" value="${z.name||''}" placeholder="Name">
+<input type="text" id="z${z.id}_name" value="${z.name||''}" placeholder="Name" style="width:120px">
 <span class="ztoggle"><input type="checkbox" id="z${z.id}_enabled" ${z.enabled?'checked':''}><span class="toggle-on"></span><span style="font-size:10px;color:#86868b;margin-left:4px">Enable</span></span>
 </div>
 <div class="zone-params">
@@ -645,6 +649,14 @@ async function renderZoneCards(a){
 <div class="zone-params-title">Siren cycle</div>
 <div class="zone-params-field"><span>ON for:</span><input type="number" id="z${z.id}_sirenOn" value="${z.sirenOnS||0}" min="0" max="255"><span>s</span></div>
 <div class="zone-params-field"><span>OFF for:</span><input type="number" id="z${z.id}_sirenOff" value="${z.sirenOffS||0}" min="0" max="255"><span>s</span></div>
+</div>
+<div style="font-size:10px;color:#86868b;margin:4px 0;display:flex;gap:12px;flex-wrap:wrap">
+<label style="display:inline-flex;align-items:center;gap:3px;margin-top:0;font-size:10px;color:#86868b">
+<input type="checkbox" id="z${z.id}_sirenEnabled" ${z.sirenEnabled!==false?'checked':''}>Siren
+</label>
+<label style="display:inline-flex;align-items:center;gap:3px;margin-top:0;font-size:10px;color:#86868b">
+<input type="checkbox" id="z${z.id}_alarmRelayEnabled" ${z.alarmRelayEnabled!==false?'checked':''}>Alarm Relay
+</label>
 </div>
 ${sensors?`<div style="font-size:10px;color:#86868b;margin:2px 0">Sensors: ${sensors}</div>`:''}
 <div class="sens-foot"><button class="sens-upd" onclick="saveZones()">Update</button></div>
@@ -662,6 +674,8 @@ async function saveZones(){
     body.set('z'+i+'_sirenOn',document.getElementById('z'+i+'_sirenOn')?.value||'0');
     body.set('z'+i+'_sirenOff',document.getElementById('z'+i+'_sirenOff')?.value||'0');
     body.set('z'+i+'_enabled',document.getElementById('z'+i+'_enabled')?.checked?'1':'0');
+    body.set('z'+i+'_sirenEnabled',document.getElementById('z'+i+'_sirenEnabled')?.checked?'1':'0');
+    body.set('z'+i+'_alarmRelayEnabled',document.getElementById('z'+i+'_alarmRelayEnabled')?.checked?'1':'0');
   }
   const r=await fetch('/api/zones',{method:'POST',body});
   const d=await r.json();
@@ -880,6 +894,8 @@ static void apiZonesConfig(AsyncWebServerRequest *req) {
       z["sirenOnS"]    = config.zones[i].sirenOnS;
       z["sirenOffS"]   = config.zones[i].sirenOffS;
       z["enabled"]     = config.zones[i].enabled;
+      z["sirenEnabled"]       = config.zones[i].sirenEnabled;
+      z["alarmRelayEnabled"]  = config.zones[i].alarmRelayEnabled;
     // Collect associated sensor labels
     String sensList;
     for (int s = 0; s < TOTAL_SENSORS; s++) {
@@ -919,6 +935,8 @@ static void apiZonesConfig(AsyncWebServerRequest *req) {
         config.zones[i].sirenOffS = req->arg((prefix + "_sirenOff").c_str()).toInt();
       }
       config.zones[i].enabled = (req->arg((prefix + "_enabled").c_str()) != "0");
+      config.zones[i].sirenEnabled = (req->arg((prefix + "_sirenEnabled").c_str()) != "0");
+      config.zones[i].alarmRelayEnabled = (req->arg((prefix + "_alarmRelayEnabled").c_str()) != "0");
     }
     saveConfig();
     req->send(200, "application/json", "{\"ok\":true,\"saved\":true}");
@@ -975,6 +993,13 @@ void initWebServer() {
   server.on("/api/restart", HTTP_GET, apiRestart);
   server.on("/api/reconnect", HTTP_GET, apiReconnect);
 
+  // Temporary: force siren zoneId to 0
+  server.on("/api/fix-siren", HTTP_POST, [](AsyncWebServerRequest *req) {
+    config.relays[0].zoneId = 0;
+    saveConfig();
+    req->send(200, "application/json", "{\"ok\":true,\"msg\":\"Siren zoneId set to 0\"}");
+  });
+
   for (int z = 1; z <= MAX_ZONES; z++) {
     String base = "/api/zone/" + String(z);
     server.on((base + "/arm").c_str(),    HTTP_GET, apiZoneCommand);
@@ -997,6 +1022,7 @@ void initWebServer() {
       }
       if (req->hasArg(keyEnabled.c_str())) {
         config.relays[i].enabled = (req->arg(keyEnabled.c_str()) != "0");
+        relayManualOverride[i] = false;
       }
     }
     saveConfig();

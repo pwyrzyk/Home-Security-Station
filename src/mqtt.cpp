@@ -133,7 +133,10 @@ void mqttCallback(char* topic, byte* payload, unsigned int len) {
     int r = num.toInt();
     if (r >= 1 && r <= MAX_RELAYS) {
       bool on = (p == "ON" || p == "1" || p == "true");
-      setRelay(r - 1, on);
+      uint8_t idx = r - 1;
+      relayManualOverride[idx] = true;
+      relayManualState[idx] = on;
+      setRelay(idx, on);
       publishStatus();
     }
   }

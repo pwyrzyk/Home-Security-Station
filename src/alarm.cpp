@@ -32,10 +32,29 @@ static void setZoneAlarmState(uint8_t zoneId, ZoneAlarmState newState) {
 
 // ─── Sync relay outputs based on zone states and relay config ─────────────
 static void syncRelays() {
+  // Auto-clear manual overrides when any zone is armed
+  bool anyArmed = false;
+  for (int z = 0; z < MAX_ZONES; z++) {
+    if (config.zones[z].enabled && zoneStates[z].alarmState != ZONE_DISARMED) {
+      anyArmed = true;
+      break;
+    }
+  }
+  if (anyArmed) {
+    for (int r = 0; r < MAX_RELAYS; r++) {
+      relayManualOverride[r] = false;
+    }
+  }
+
   for (int r = 0; r < MAX_RELAYS; r++) {
     RelayConfig &rc = config.relays[r];
     if (!rc.enabled) {
       setRelay(r, false);
+      continue;
+    }
+    // Manual override takes priority when all zones are disarmed
+    if (relayManualOverride[r]) {
+      setRelay(r, relayManualState[r]);
       continue;
     }
     switch (rc.mode) {
@@ -47,9 +66,19 @@ static void syncRelays() {
         break;
       case RELAY_FOLLOW_ZONE: {
         bool active = false;
-        if (rc.zoneId >= 1 && rc.zoneId <= MAX_ZONES) {
+        if (rc.zoneId == 0) {
+          // Follow any zone in alarm that has siren enabled
+          for (int z = 0; z < MAX_ZONES; z++) {
+            if (config.zones[z].enabled && config.zones[z].sirenEnabled &&
+                zoneStates[z].alarmState == ZONE_ALARM && zoneStates[z].sirenOn) {
+              active = true;
+              break;
+            }
+          }
+        } else if (rc.zoneId >= 1 && rc.zoneId <= MAX_ZONES) {
           uint8_t zidx = rc.zoneId - 1;
-          if (zoneStates[zidx].alarmState == ZONE_ALARM) {
+          if (config.zones[zidx].sirenEnabled &&
+              zoneStates[zidx].alarmState == ZONE_ALARM) {
             active = zoneStates[zidx].sirenOn;
           }
         }
@@ -57,10 +86,11 @@ static void syncRelays() {
         break;
       }
       case RELAY_PULSE_MODE: {
-        // "Alarm" relay: cycles 10s ON / 60s OFF while any zone is in ALARM state
+        // "Alarm" relay: cycles 10s ON / 60s OFF while any zone with alarmRelayEnabled is in ALARM
         bool anyAlarm = false;
         for (int z = 0; z < MAX_ZONES; z++) {
-          if (config.zones[z].enabled && zoneStates[z].alarmState == ZONE_ALARM) {
+          if (config.zones[z].enabled && config.zones[z].alarmRelayEnabled &&
+              zoneStates[z].alarmState == ZONE_ALARM) {
             anyAlarm = true;
             break;
           }

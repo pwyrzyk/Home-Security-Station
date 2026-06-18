@@ -15,6 +15,8 @@ bool apMode = false;
 SensorStateData sensorStates[TOTAL_SENSORS];
 ZoneStateData    zoneStates[MAX_ZONES];
 bool relayStates[MAX_RELAYS];
+bool relayManualOverride[MAX_RELAYS];
+bool relayManualState[MAX_RELAYS];
 bool dinputStates[MAX_DINPUTS];
 ExtSensorState extSensorStates[MAX_EXT_SENSORS];
 
@@ -66,6 +68,8 @@ void setDefaults() {
     config.zones[i].sirenOffS   = 0;
     config.zones[i].relayMask   = 0;
     config.zones[i].enabled     = true;
+    config.zones[i].sirenEnabled      = true;
+    config.zones[i].alarmRelayEnabled  = true;
   }
 
   // ─── Default relays (active LOW) ──────────────────────────────────────
@@ -151,6 +155,12 @@ void loadConfig() {
     }
   }
 
+  // ─── Migrate: force Siren relay zoneId to 0 (follow all zones) ────────
+  if (config.relays[0].mode == RELAY_FOLLOW_ZONE && config.relays[0].zoneId != 0) {
+    config.relays[0].zoneId = 0;
+    saveConfig();
+  }
+
   // Initialize runtime state
   for (int i = 0; i < TOTAL_SENSORS; i++) {
     sensorStates[i].state  = SENSOR_IDLE;
@@ -164,6 +174,8 @@ void loadConfig() {
   }
   for (int i = 0; i < MAX_RELAYS; i++) {
     relayStates[i] = false;
+    relayManualOverride[i] = false;
+    relayManualState[i] = false;
   }
   for (int i = 0; i < MAX_DINPUTS; i++) {
     dinputStates[i] = false;

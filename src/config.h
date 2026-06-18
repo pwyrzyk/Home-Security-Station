@@ -65,7 +65,7 @@
 
 // ─── EEPROM ────────────────────────────────────────────────────────────────
 #define EEPROM_SIZE  4096
-#define EEPROM_MAGIC 0xAC
+#define EEPROM_MAGIC 0xAD
 
 // ─── Zone limits ───────────────────────────────────────────────────────────
 #define MAX_EXT_SENSORS 16
@@ -140,6 +140,8 @@ struct ZoneConfig {
   uint8_t sirenOffS;        // 0..255, siren OFF time between cycles (0=no cycling)
   uint8_t relayMask;        // bitmask of relays to activate on alarm
   bool enabled;             // zone enabled/disabled
+  bool sirenEnabled;        // zone can trigger siren relay (FOLLOW_ZONE mode)
+  bool alarmRelayEnabled;   // zone can trigger alarm/pulse relay (PULSE_MODE)
 };
 
 // ─── Relay configuration ───────────────────────────────────────────────────
@@ -228,6 +230,8 @@ extern ZoneStateData zoneStates[MAX_ZONES];
 
 // ─── Relay runtime ─────────────────────────────────────────────────────────
 extern bool relayStates[MAX_RELAYS];
+extern bool relayManualOverride[MAX_RELAYS];
+extern bool relayManualState[MAX_RELAYS];
 extern bool dinputStates[MAX_DINPUTS];
 extern ExtSensorState extSensorStates[MAX_EXT_SENSORS];
 
