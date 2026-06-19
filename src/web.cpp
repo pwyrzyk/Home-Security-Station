@@ -7,6 +7,26 @@
 #include "network.h"
 #include "event_log.h"
 #include <ArduinoJson.h>
+
+// ─── JSON document sizing (ArduinoJson v7 pool sizes) ─────────────────────
+#define JSON_SIZE_STATUS   4096   // apiStatus: 8 zones + 16 sensors + 4 relays + 2 din + 16 ext
+#define JSON_SIZE_SENSORS  8192   // apiSensorsConfig: 16 sensors x 13 fields
+#define JSON_SIZE_NETWORK   1024   // apiNetworkConfig: 7 string/number fields
+#define JSON_SIZE_EXT      3072   // apiExtSensorsConfig: 16 sensors x 5 fields
+#define JSON_SIZE_ZONES    4096   // apiZonesConfig: 8 zones x 12 fields
+
+// Helper: serialize JSON with overflow check
+#define SERIALIZE_AND_SEND(doc, req) \
+  do { \
+    String buf; \
+    size_t len = serializeJson(doc, buf); \
+    if (len == 0) { \
+      Serial.printf("[WEB] JSON overflow in %s (capacity=%u)\n", __func__, (unsigned)(doc.capacity())); \
+      req->send(500, "text/plain", "JSON overflow"); \
+    } else { \
+      req->send(200, "application/json", buf); \
+    } \
+  } while(0)
 #include <Update.h>
 
 AsyncWebServer server(HTTP_PORT);
