@@ -9,6 +9,8 @@
 #include "mqtt.h"
 #include "ha_discovery.h"
 #include "web.h"
+#include "event_log.h"
+#include <LittleFS.h>
 
 // ─── Sensor poll interval ──────────────────────────────────────────────────
 static uint32_t lastSensorReadMs = 0;
@@ -34,6 +36,19 @@ void setup() {
   // Disarm all zones on boot
   Serial.println("[BOT] Disarming zones...");
   disarmAllZones();
+
+  // ─── LittleFS (must be before WiFi — so WiFi events can be logged) ──
+  Serial.println("[BOT] Mounting LittleFS...");
+  if (!LittleFS.begin(true)) {
+    Serial.println("[BOT] LittleFS mount failed!");
+  } else {
+    Serial.println("[BOT] LittleFS mounted");
+  }
+
+  Serial.println("[BOT] Init event log...");
+  eventLogInit();
+
+  logSystem("System booted");
 
   // Network
   Serial.println("[BOT] Starting WiFi...");
@@ -63,14 +78,7 @@ void setup() {
 
 void loop() {
   // ─── WiFi watchdog ─────────────────────────────────────────────────────
-  if (!apMode) {
-    if (WiFi.status() != WL_CONNECTED) {
-      wifiConnected = false;
-      ensureWiFiMode();
-    } else {
-      wifiConnected = true;
-    }
-  }
+  wifiStationRetryLoop();
 
   // ─── OTA + mDNS ────────────────────────────────────────────────────────
   ArduinoOTA.handle();

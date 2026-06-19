@@ -9,6 +9,9 @@ void zoneToggle(uint8_t zoneId);
 void armAllZones();
 void disarmAllZones();
 
+// ─── Command source (for event log) ────────────────────────────────────────
+extern const char* lastZoneCmdSource;    // "web user", "MQTT", "digital input", "system"
+
 // ─── Zone query ────────────────────────────────────────────────────────────
 bool isZoneArmed(uint8_t zoneId);
 ZoneAlarmState getZoneState(uint8_t zoneId);

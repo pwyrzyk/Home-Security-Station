@@ -3,6 +3,7 @@
 #include "zones.h"
 #include "alarm.h"
 #include "hardware.h"
+#include "event_log.h"
 #include <ArduinoJson.h>
 
 WiFiClient wifiClient;
@@ -53,6 +54,9 @@ void connectMQTT() {
     mqttBackoff      = 1000;
     mqttPostConnect  = true;
     mqttLoopRan      = false;
+    char buf[80];
+    snprintf(buf, sizeof(buf), "MQTT connected to %s", config.mqttServer);
+    logSystem(buf);
   }
 }
 
@@ -82,12 +86,14 @@ void mqttFlushPostConnect() {
 
   pub("status/running", "true");
   haPublishAllDiscoveries();
+  logSystem("HA autodiscovery published");
   publishStatus();
 }
 
 // ─── MQTT callback ─────────────────────────────────────────────────────────
 
 static void handleZoneCmd(const String& topic, const String& payload, uint8_t zoneId) {
+  lastZoneCmdSource = "MQTT";
   if (topic.endsWith("/arm"))    zoneArm(zoneId);
   if (topic.endsWith("/disarm")) zoneDisarm(zoneId);
   if (topic.endsWith("/toggle")) zoneToggle(zoneId);

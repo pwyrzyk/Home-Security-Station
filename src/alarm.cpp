@@ -2,6 +2,7 @@
 #include "sensors.h"
 #include "zones.h"
 #include "hardware.h"
+#include "event_log.h"
 
 void (*onZoneStateChanged)(uint8_t zoneId) = nullptr;
 
@@ -23,11 +24,77 @@ static bool zoneSensorTripped(uint8_t zoneId) {
   return false;
 }
 
+// ─── Build a sensor list for the zone (only active sensors) ────────────────
+static void getTrippedSensorList(uint8_t zoneId, char* out, size_t outSize) {
+  out[0] = 0;
+  for (int s = 0; s < TOTAL_SENSORS; s++) {
+    if (config.sensors[s].type == SENSOR_DISABLED) continue;
+    if (!(config.sensors[s].zoneMask & (1U << (zoneId - 1)))) continue;
+    if (sensorStates[s].state != SENSOR_ACTIVE) continue;
+    const char* sn = config.sensors[s].name;
+    if (strlen(sn) == 0) sn = "?";
+    size_t cur = strlen(out);
+    if (cur > 0) snprintf(out + cur, outSize - cur, ", ");
+    cur = strlen(out);
+    snprintf(out + cur, outSize - cur, "T%d '%s'", s + 1, sn);
+  }
+  for (int s = 0; s < MAX_EXT_SENSORS; s++) {
+    if (!config.extSensors[s].enabled) continue;
+    if (!(config.extSensors[s].zoneMask & (1U << (zoneId - 1)))) continue;
+    if (!extSensorStates[s].active) continue;
+    const char* en = config.extSensors[s].name;
+    if (strlen(en) == 0) en = "?";
+    size_t cur = strlen(out);
+    if (cur > 0) snprintf(out + cur, outSize - cur, ", ");
+    cur = strlen(out);
+    snprintf(out + cur, outSize - cur, "E%d '%s'", s + 1, en);
+  }
+  if (out[0] == 0) strlcpy(out, "unknown sensor", outSize);
+}
+
 static void setZoneAlarmState(uint8_t zoneId, ZoneAlarmState newState) {
   uint8_t idx = zoneId - 1;
   if (zoneStates[idx].alarmState == newState) return;
   zoneStates[idx].alarmState = newState;
   if (onZoneStateChanged) onZoneStateChanged(zoneId);
+
+  // ─── Event log ──────────────────────────────────────────────────────
+  char buf[120];
+  char sensors[64];
+  const char* name = config.zones[idx].name;
+  if (strlen(name) == 0) name = "?";
+  switch (newState) {
+    case ZONE_DISARMED: {
+      const char* src = lastZoneCmdSource;
+      if (src) snprintf(buf, sizeof(buf), "Zone %u '%s' disarmed by %s", zoneId, name, src);
+      else     snprintf(buf, sizeof(buf), "Zone %u '%s' disarmed", zoneId, name);
+      logAlarm(buf);
+      break;
+    }
+    case ZONE_ARMING:
+      snprintf(buf, sizeof(buf), "Zone %u '%s' arming (exit delay)", zoneId, name);
+      logAlarm(buf);
+      break;
+    case ZONE_ARMED_IDLE: {
+      const char* src = lastZoneCmdSource;
+      if (src) snprintf(buf, sizeof(buf), "Zone %u '%s' armed by %s", zoneId, name, src);
+      else     snprintf(buf, sizeof(buf), "Zone %u '%s' armed", zoneId, name);
+      logAlarm(buf);
+      break;
+    }
+    case ZONE_DISARMING:
+      getTrippedSensorList(zoneId, sensors, sizeof(sensors));
+      snprintf(buf, sizeof(buf), "Zone %u '%s' entry delay by %s", zoneId, name, sensors);
+      logAlarm(buf);
+      break;
+    case ZONE_ALARM:
+      getTrippedSensorList(zoneId, sensors, sizeof(sensors));
+      snprintf(buf, sizeof(buf), "Zone %u '%s' ALARM triggered by %s", zoneId, name, sensors);
+      logAlarm(buf);
+      break;
+    default:
+      break;
+  }
 }
 
 // ─── Sync relay outputs based on zone states and relay config ─────────────
@@ -67,13 +134,20 @@ static void syncRelays() {
       case RELAY_FOLLOW_ZONE: {
         bool active = false;
         if (rc.zoneId == 0) {
-          // Follow any zone in alarm that has siren enabled
+          // Follow the zone that entered alarm earliest
+          uint32_t oldestMs = UINT32_MAX;
+          int bestZ = -1;
           for (int z = 0; z < MAX_ZONES; z++) {
             if (config.zones[z].enabled && config.zones[z].sirenEnabled &&
                 zoneStates[z].alarmState == ZONE_ALARM && zoneStates[z].sirenOn) {
-              active = true;
-              break;
+              if (zoneStates[z].alarmEnteredMs < oldestMs) {
+                oldestMs = zoneStates[z].alarmEnteredMs;
+                bestZ = z;
+              }
             }
+          }
+          if (bestZ >= 0) {
+            active = zoneStates[bestZ].sirenOn;
           }
         } else if (rc.zoneId >= 1 && rc.zoneId <= MAX_ZONES) {
           uint8_t zidx = rc.zoneId - 1;
@@ -86,35 +160,48 @@ static void syncRelays() {
         break;
       }
       case RELAY_PULSE_MODE: {
-        // "Alarm" relay: cycles 10s ON / 60s OFF while any zone with alarmRelayEnabled is in ALARM
+        // "Alarm" relay: cycles ON/OFF from the zone that entered alarm earliest
         bool anyAlarm = false;
+        uint8_t onSecs = 0, offSecs = 0;
+        uint32_t oldestMs = UINT32_MAX;
         for (int z = 0; z < MAX_ZONES; z++) {
           if (config.zones[z].enabled && config.zones[z].alarmRelayEnabled &&
               zoneStates[z].alarmState == ZONE_ALARM) {
-            anyAlarm = true;
-            break;
+            if (zoneStates[z].alarmEnteredMs < oldestMs) {
+              oldestMs = zoneStates[z].alarmEnteredMs;
+              anyAlarm = true;
+              if (config.zones[z].alarmRelayOnS > 0 && config.zones[z].alarmRelayOffS > 0) {
+                onSecs = config.zones[z].alarmRelayOnS;
+                offSecs = config.zones[z].alarmRelayOffS;
+              }
+              // if 0/0, leave onSecs/offSecs at 0 for continuous-ON below
+            }
           }
         }
         static uint32_t pulsePhaseMs[MAX_RELAYS] = {0};
         static bool     pulseOn[MAX_RELAYS] = {false};
         if (anyAlarm) {
-          uint32_t now = millis();
-          if (pulseOn[r]) {
-            // Currently ON — check if 10s elapsed
-            if (now - pulsePhaseMs[r] >= 10000UL) {
-              pulseOn[r] = false;
-              pulsePhaseMs[r] = now;
-            }
+          if (onSecs == 0 || offSecs == 0) {
+            // Continuous ON when both are 0
+            pulseOn[r] = false;
+            pulsePhaseMs[r] = 0;
+            setRelay(r, true);
           } else {
-            // Currently OFF — check if 60s elapsed
-            if (now - pulsePhaseMs[r] >= 60000UL || pulsePhaseMs[r] == 0) {
-              pulseOn[r] = true;
-              pulsePhaseMs[r] = now;
+            uint32_t now = millis();
+            if (pulseOn[r]) {
+              if (now - pulsePhaseMs[r] >= ((uint32_t)onSecs * 1000UL)) {
+                pulseOn[r] = false;
+                pulsePhaseMs[r] = now;
+              }
+            } else {
+              if (now - pulsePhaseMs[r] >= ((uint32_t)offSecs * 1000UL) || pulsePhaseMs[r] == 0) {
+                pulseOn[r] = true;
+                pulsePhaseMs[r] = now;
+              }
             }
+            setRelay(r, pulseOn[r]);
           }
-          setRelay(r, pulseOn[r]);
         } else {
-          // No alarm — reset
           pulseOn[r] = false;
           pulsePhaseMs[r] = 0;
           setRelay(r, false);
@@ -139,6 +226,7 @@ static void processDigitalInputs() {
     // Mark as handled (edge-triggered)
     dinputStates[i] = false;
 
+    lastZoneCmdSource = "digital input";
     switch (cfg.action) {
       case INPUT_ACTION_ARM_ZONE:
         zoneArm(cfg.zoneId);
@@ -202,6 +290,7 @@ void alarmLoop() {
             setZoneAlarmState(zoneId, ZONE_ALARM);
             zs.sirenOn = true;
             zs.sirenPhaseMs = now;
+            zs.alarmEnteredMs = now;
           }
         }
         break;
@@ -214,6 +303,7 @@ void alarmLoop() {
           setZoneAlarmState(zoneId, ZONE_ALARM);
           zs.sirenOn = true;
           zs.sirenPhaseMs = now;
+          zs.alarmEnteredMs = now;
         }
         break;
 

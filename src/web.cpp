@@ -5,6 +5,7 @@
 #include "hardware.h"
 #include "mqtt.h"
 #include "network.h"
+#include "event_log.h"
 #include <ArduinoJson.h>
 #include <Update.h>
 
@@ -29,6 +30,7 @@ static void apiStatus(AsyncWebServerRequest *req) {
     z["id"]    = i + 1;
     z["name"]  = config.zones[i].name;
     z["armed"] = zoneStates[i].armed;
+    z["enabled"] = config.zones[i].enabled;
     z["state"] = zoneAlarmStateStr(zoneStates[i].alarmState);
     z["label"] = zoneAlarmStateLabel(zoneStates[i].alarmState);
     // Collect associated sensor labels
@@ -220,6 +222,7 @@ static void apiZoneCommand(AsyncWebServerRequest *req) {
   int prevSlash = path.lastIndexOf('/', lastSlash - 1);
   int zoneId    = path.substring(prevSlash + 1, lastSlash).toInt();
   if (zoneId >= 1 && zoneId <= MAX_ZONES) {
+    lastZoneCmdSource = "web user";
     if (action == "arm") zoneArm(zoneId);
     if (action == "disarm") zoneDisarm(zoneId);
     if (action == "toggle") zoneToggle(zoneId);
@@ -246,7 +249,7 @@ static void apiRelayCommand(AsyncWebServerRequest *req) {
 
 static const char HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Alarm ESP</title><style>
+<title>Home Alarm System</title><style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;background:#f2f2f7;color:#1d1d1f;min-height:100vh;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 nav{display:flex;background:rgba(255,255,255,0.72);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);padding:0;position:sticky;top:0;z-index:100;border-bottom:1px solid rgba(0,0,0,0.06)}
@@ -395,6 +398,26 @@ small{color:#86868b;font-size:12px}
 .zone-params-field span{font-size:11px;color:#86868b;font-weight:500;white-space:nowrap}
 .zone-params-field input[type=number]{width:56px;padding:5px 8px;font-size:12px;margin-top:0}
 .zone-params-title{grid-column:1/-1;font-size:10px;font-weight:600;color:#1d1d1f;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:-4px}
+.log-row{display:flex;align-items:flex-start;gap:12px;padding:12px 16px;margin:0;border-left:4px solid #e5e5ea;transition:border-color 0.3s,background 0.3s}
+.log-row:hover{background:#f9f9fb}
+.log-row.alarm{border-left-color:#ff3b30}
+.log-row.system{border-left-color:#0071e3}
+.log-row.relay{border-left-color:#ff9500}
+.log-badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:600;color:#fff;white-space:nowrap;min-width:64px;justify-content:center;letter-spacing:0.02em}
+.log-badge.alarm{background:#ff3b30}
+.log-badge.system{background:#0071e3}
+.log-badge.relay{background:#ff9500}
+.log-time{font-size:12px;color:#86868b;white-space:nowrap;min-width:140px;font-variant-numeric:tabular-nums}
+.log-desc{font-size:13px;color:#1d1d1f;line-height:1.4;word-break:break-word}
+.log-empty{text-align:center;padding:60px 20px;color:#aeaeb2;font-size:15px}
+.log-empty div{font-size:40px;margin-bottom:12px}
+.log-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.log-header h1{margin-bottom:0}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.log-footer{display:flex;align-items:center;justify-content:space-between;padding:8px 0 0;font-size:11px;color:#aeaeb2}
+.filter-btn{padding:6px 14px;border:1.5px solid #e5e5ea;border-radius:10px;background:#fff;color:#86868b;cursor:pointer;font-size:12px;font-weight:500;transition:all 0.2s}
+.filter-btn:hover{border-color:#0071e3;color:#0071e3}
+.filter-btn.active{border-color:#0071e3;background:#f0f7ff;color:#0071e3;font-weight:600}
 </style></head>
 <body>
 <nav>
@@ -403,8 +426,9 @@ small{color:#86868b;font-size:12px}
 <button onclick="showTab('extsensors')" id="tab-extsensors">External Sensors</button>
 <button onclick="showTab('zones')" id="tab-zones">Zones</button>
 <button onclick="showTab('config')" id="tab-config">Config</button>
+<button onclick="showTab('eventlog')" id="tab-eventlog">Event Log</button>
 </nav>
-<div id="page-dashboard" class="page active"><h1>Alarm ESP</h1>
+<div id="page-dashboard" class="page active"><h1>Home Alarm System</h1>
 <div id="sysInfo" style="font-size:13px;color:#86868b;margin-bottom:12px">Loading...</div>
 <div class="card"><h2>Zones</h2><div id="zones">Loading...</div></div>
 <div class="card"><h2>Sensors</h2><div id="sensors">Loading...</div></div>
@@ -456,6 +480,19 @@ small{color:#86868b;font-size:12px}
 <button class="btn btn-save" onclick="reconnect()">Reconnect WiFi</button>
 <button class="btn btn-danger" onclick="restart()">Restart</button></div>
 <div id="cfgMsg" style="margin-top:8px;font-size:13px"></div></div>
+<div id="page-eventlog" class="page">
+<div class="log-header"><h1>Event Log</h1>
+<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+<button class="filter-btn active" id="filterAll" onclick="setEventLogFilter(-1)">All</button>
+<button class="filter-btn" id="filter0" onclick="setEventLogFilter(0)">🔴 Alarm</button>
+<button class="filter-btn" id="filter1" onclick="setEventLogFilter(1)">🔵 System</button>
+<button class="filter-btn" id="filter2" onclick="setEventLogFilter(2)">🟠 Relay</button>
+</div>
+<button class="btn btn-danger" onclick="clearEventLog()">Clear Log</button>
+</div>
+<div class="card" id="eventLogContainer" style="padding:0;overflow:hidden">Loading...</div>
+<div class="log-footer" id="logFooter"></div>
+</div>
 <script>
 let data={};
 
@@ -482,7 +519,7 @@ async function load(){
   const r=await fetch('/api/status');
   data=await r.json();
   document.getElementById('sysInfo').textContent=
-    data.device+' | '+data.firmware+' | WiFi: '+data.wifi+' | RSSI: '+data.rssi+' dBm';
+    data.device+' | '+data.firmware+' | http://alarm.local | WiFi: '+data.wifi+' | RSSI: '+data.rssi+' dBm';
   renderZones(data.zones);
   renderSensors(data.sensors);
   renderRelays(data.relays);
@@ -533,6 +570,7 @@ function renderRelays(a){
 function renderZones(a){
   let h='<div class="zone-grid">';
   a.forEach(z=>{
+    if(z.enabled===false) return;
     let s=z.state;
     let armed=(s!=='disarmed');
     let toggleCls=(s==='alarm')?'alarm-slider':((!armed)?'disarm-slider':'');
@@ -561,9 +599,9 @@ function renderSensors(a){
     h+='<div class="sensor-row">';
     for(let i=row*8;i<Math.min(row*8+8,a.length);i++){
       let s=a[i];
-      let st=s.type==0?'disabled':s.state;
-      let rawStr=s.type==0?'---':(s.raw+' mV');
-      let stateLabel=s.type==0?'off':s.state;
+      let st=s.type==='disabled'?'disabled':s.state;
+      let rawStr=s.type==='disabled'?'---':(s.raw+' mV');
+      let stateLabel=s.type==='disabled'?'off':s.state;
       let stateCls=(st==='active')?'active-state':((st==='fault')?'fault-state':'');
       h+=`<div class="sensor-box ${st}">
 <span class="sdot ${st}"></span>
@@ -649,6 +687,9 @@ async function renderZoneCards(a){
 <div class="zone-params-title">Siren cycle</div>
 <div class="zone-params-field"><span>ON for:</span><input type="number" id="z${z.id}_sirenOn" value="${z.sirenOnS||0}" min="0" max="255"><span>s</span></div>
 <div class="zone-params-field"><span>OFF for:</span><input type="number" id="z${z.id}_sirenOff" value="${z.sirenOffS||0}" min="0" max="255"><span>s</span></div>
+<div class="zone-params-title">Alarm relay cycle</div>
+<div class="zone-params-field"><span>ON for:</span><input type="number" id="z${z.id}_alarmRelayOnS" value="${z.alarmRelayOnS||0}" min="0" max="255"><span>s</span></div>
+<div class="zone-params-field"><span>OFF for:</span><input type="number" id="z${z.id}_alarmRelayOffS" value="${z.alarmRelayOffS||0}" min="0" max="255"><span>s</span></div>
 </div>
 <div style="font-size:10px;color:#86868b;margin:4px 0;display:flex;gap:12px;flex-wrap:wrap">
 <label style="display:inline-flex;align-items:center;gap:3px;margin-top:0;font-size:10px;color:#86868b">
@@ -676,6 +717,8 @@ async function saveZones(){
     body.set('z'+i+'_enabled',document.getElementById('z'+i+'_enabled')?.checked?'1':'0');
     body.set('z'+i+'_sirenEnabled',document.getElementById('z'+i+'_sirenEnabled')?.checked?'1':'0');
     body.set('z'+i+'_alarmRelayEnabled',document.getElementById('z'+i+'_alarmRelayEnabled')?.checked?'1':'0');
+    body.set('z'+i+'_alarmRelayOnS',document.getElementById('z'+i+'_alarmRelayOnS')?.value||'0');
+    body.set('z'+i+'_alarmRelayOffS',document.getElementById('z'+i+'_alarmRelayOffS')?.value||'0');
   }
   const r=await fetch('/api/zones',{method:'POST',body});
   const d=await r.json();
@@ -750,14 +793,14 @@ async function refreshSensorLive(){
   a.forEach(s=>{
     let card=document.getElementById('card_'+s.id);
     if(!card) return;
-    let cls=s.type==0?'disabled':s.state;
+    let cls=s.type==='disabled'?'disabled':s.state;
     card.className='sens-card '+cls;
     let dot=document.getElementById('dot_'+s.id);
-    if(dot){ dot.className='sdot '+(s.type==0?'none':dotClass(s.state)); }
+    if(dot){ dot.className='sdot '+(s.type==='disabled'?'none':dotClass(s.state)); }
     let st=document.getElementById('state_'+s.id);
-    if(st){ st.textContent=s.type==0?'disabled':s.state; }
+    if(st){ st.textContent=s.type==='disabled'?'disabled':s.state; }
     let rw=document.getElementById('raw_'+s.id);
-    if(rw){ rw.textContent=s.raw+' mV'; rw.style.color=s.type==0?'#aeaeb2':stateColor(s.state); }
+    if(rw){ rw.textContent=s.raw+' mV'; rw.style.color=s.type==='disabled'?'#aeaeb2':stateColor(s.state); }
     let sLo=s.standbyMin||0, sHi=s.standbyMax||2000;
     let dLo=s.detectMin||8000, dHi=(s.detectMax===65535||s.detectMax===0)?65535:s.detectMax;
     let fLo=s.faultMin||30000, fHi=(s.faultMax===65535||s.faultMax===0)?65535:s.faultMax;
@@ -816,8 +859,54 @@ async function saveConfig(){
   const d=await r.json();
   document.getElementById('cfgMsg').textContent=d.saved?'Config saved.':'Error.';
 }
+let eventLogTimer=null;
+let lastEventLogText='';
+let eventLogFilter=-1;
+function setEventLogFilter(f){
+  eventLogFilter=f;
+  lastEventLogText='';
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  const id=f===-1?'filterAll':'filter'+f;
+  document.getElementById(id).classList.add('active');
+  loadEventLog();
+}
+async function loadEventLog(){
+  const r=await fetch('/api/eventlog');
+  const txt=await r.text();
+  const cacheKey=eventLogFilter+':'+txt;
+  if(cacheKey===lastEventLogText) return;
+  lastEventLogText=cacheKey;
+  let a=JSON.parse(txt);
+  if(eventLogFilter>=0) a=a.filter(e=>e.type===eventLogFilter);
+  const c=document.getElementById('eventLogContainer');
+  if(!a.length){
+    c.innerHTML='<div class="log-empty"><div>📋</div>No events recorded yet.</div>';
+    document.getElementById('logFooter').textContent='';
+    return;
+  }
+  let h='';
+  a.forEach(e=>{
+    const cls=e.type===0?'alarm':e.type===2?'relay':'system';
+    const badge=e.type===0?'🔴 ALARM':e.type===2?'🟠 RELAY':'🔵 SYSTEM';
+    const d=new Date(e.ts*1000);
+    const ts=d.toLocaleDateString()+' '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    h+=`<div class="log-row ${cls}">
+<span class="log-badge ${cls}">${badge}</span>
+<span class="log-time">${ts}</span>
+<span class="log-desc">${e.desc||''}</span>
+</div>`;
+  });
+  c.innerHTML=h;
+  document.getElementById('logFooter').textContent=`Showing ${a.length} events · 30-day retention · persisted in LittleFS`;
+}
+async function clearEventLog(){
+  if(!confirm('Permanently clear all event logs?')) return;
+  await fetch('/api/eventlog/clear',{method:'POST'});
+  loadEventLog();
+}
 function showTab(t){
   if(sensorRefreshTimer){clearInterval(sensorRefreshTimer);sensorRefreshTimer=null;}
+  if(eventLogTimer){clearInterval(eventLogTimer);eventLogTimer=null;}
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
   document.getElementById('page-'+t).classList.add('active');
@@ -826,6 +915,7 @@ function showTab(t){
   if(t=='sensors'){loadSensors();sensorRefreshTimer=setInterval(refreshSensorLive,2000);}
   if(t=='zones')loadZones();
   if(t=='extsensors'){loadExtSensors();sensorRefreshTimer=setInterval(refreshExtLive,2000);}
+  if(t=='eventlog'){loadEventLog();eventLogTimer=setInterval(loadEventLog,10000);}
 }
 async function uploadFirmware(){
   const file=document.getElementById('otaFile').files[0];
@@ -896,6 +986,8 @@ static void apiZonesConfig(AsyncWebServerRequest *req) {
       z["enabled"]     = config.zones[i].enabled;
       z["sirenEnabled"]       = config.zones[i].sirenEnabled;
       z["alarmRelayEnabled"]  = config.zones[i].alarmRelayEnabled;
+      z["alarmRelayOnS"]      = config.zones[i].alarmRelayOnS;
+      z["alarmRelayOffS"]     = config.zones[i].alarmRelayOffS;
     // Collect associated sensor labels
     String sensList;
     for (int s = 0; s < TOTAL_SENSORS; s++) {
@@ -937,6 +1029,8 @@ static void apiZonesConfig(AsyncWebServerRequest *req) {
       config.zones[i].enabled = (req->arg((prefix + "_enabled").c_str()) != "0");
       config.zones[i].sirenEnabled = (req->arg((prefix + "_sirenEnabled").c_str()) != "0");
       config.zones[i].alarmRelayEnabled = (req->arg((prefix + "_alarmRelayEnabled").c_str()) != "0");
+      config.zones[i].alarmRelayOnS = (uint8_t)req->arg((prefix + "_alarmRelayOnS").c_str()).toInt();
+      config.zones[i].alarmRelayOffS = (uint8_t)req->arg((prefix + "_alarmRelayOffS").c_str()).toInt();
     }
     saveConfig();
     req->send(200, "application/json", "{\"ok\":true,\"saved\":true}");
@@ -992,6 +1086,16 @@ void initWebServer() {
   server.on("/api/network", HTTP_POST, apiNetworkConfig);
   server.on("/api/restart", HTTP_GET, apiRestart);
   server.on("/api/reconnect", HTTP_GET, apiReconnect);
+
+  server.on("/api/eventlog", HTTP_GET, [](AsyncWebServerRequest *req) {
+    req->send(200, "application/json", getEventLogJson());
+  });
+
+  server.on("/api/eventlog/clear", HTTP_POST, [](AsyncWebServerRequest *req) {
+    clearEventLog();
+    logSystem("Event log cleared");
+    req->send(200, "application/json", "{\"ok\":true}");
+  });
 
   // Temporary: force siren zoneId to 0
   server.on("/api/fix-siren", HTTP_POST, [](AsyncWebServerRequest *req) {

@@ -8,7 +8,7 @@
 #endif
 
 // ─── Hardware constants ────────────────────────────────────────────────────
-#define DEVICE_NAME "alarm-esp"
+#define DEVICE_NAME "home-alarm"
 
 // I2C
 #define I2C_SDA 0
@@ -55,17 +55,20 @@
 
 #define OTA_PORT    3232
 #define OTA_PASSWORD "admin"
-#define OTA_HOSTNAME "alarm-esp"
+#define OTA_HOSTNAME "alarm"
 
 #define NTP_SERVER      "pool.ntp.org"
 #define TZ_OFFSET_SEC   7200   // UTC+2
 
 #define WIFI_CONNECT_TIMEOUT_MS  15000
+#define WIFI_RETRY_MAX_ATTEMPTS  5
+#define WIFI_RETRY_INTERVAL_MS   30000    // 30s between retries
+#define WIFI_AP_SCAN_INTERVAL_MS 60000    // 60s between AP→STA scan checks
 #define HTTP_PORT                80
 
 // ─── EEPROM ────────────────────────────────────────────────────────────────
 #define EEPROM_SIZE  4096
-#define EEPROM_MAGIC 0xAD
+#define EEPROM_MAGIC 0xAE
 
 // ─── Zone limits ───────────────────────────────────────────────────────────
 #define MAX_EXT_SENSORS 16
@@ -142,6 +145,8 @@ struct ZoneConfig {
   bool enabled;             // zone enabled/disabled
   bool sirenEnabled;        // zone can trigger siren relay (FOLLOW_ZONE mode)
   bool alarmRelayEnabled;   // zone can trigger alarm/pulse relay (PULSE_MODE)
+  uint8_t alarmRelayOnS;    // 0..255, alarm relay ON time (0=use hardcoded 10s)
+  uint8_t alarmRelayOffS;   // 0..255, alarm relay OFF time (0=use hardcoded 60s)
 };
 
 // ─── Relay configuration ───────────────────────────────────────────────────
@@ -222,6 +227,7 @@ struct ZoneStateData {
   ZoneAlarmState alarmState;
   uint32_t armedAtMs;
   uint32_t preAlarmStartMs;
+  uint32_t alarmEnteredMs;  // timestamp when zone entered ZONE_ALARM
   uint32_t sirenPhaseMs;    // start of current siren ON/OFF phase
   bool sirenOn;             // true = siren relay should be ON this phase
 };

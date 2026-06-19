@@ -2,6 +2,8 @@
 #include "hardware.h"
 #include "sensors.h"
 
+const char* lastZoneCmdSource = nullptr;
+
 // ─── Internal change notification ─────────────────────────────────────────
 // Set by alarm engine when zone state changes programmatically
 extern void (*onZoneStateChanged)(uint8_t zoneId);
@@ -44,10 +46,12 @@ void zoneToggle(uint8_t zoneId) {
 }
 
 void armAllZones() {
+  lastZoneCmdSource = "system";
   for (uint8_t i = 1; i <= MAX_ZONES; i++) zoneArm(i);
 }
 
 void disarmAllZones() {
+  lastZoneCmdSource = "system";
   for (uint8_t i = 1; i <= MAX_ZONES; i++) zoneDisarm(i);
 }
 

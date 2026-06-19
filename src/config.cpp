@@ -27,7 +27,7 @@ void computeDeviceIdentifiers() {
   char buf[13];
   snprintf(buf, sizeof(buf), "%06llX", (unsigned long long)(chipId & 0xFFFFFF));
   deviceSuffix = String(buf);
-  mqttBase     = "alarm-" + deviceSuffix;
+  mqttBase     = "home-alarm-" + deviceSuffix;
   deviceId     = String(DEVICE_NAME) + "-" + deviceSuffix;
 }
 
@@ -67,9 +67,11 @@ void setDefaults() {
     config.zones[i].sirenOnS    = 0;
     config.zones[i].sirenOffS   = 0;
     config.zones[i].relayMask   = 0;
-    config.zones[i].enabled     = true;
+    config.zones[i].enabled     = false;
     config.zones[i].sirenEnabled      = true;
     config.zones[i].alarmRelayEnabled  = true;
+    config.zones[i].alarmRelayOnS      = 0;
+    config.zones[i].alarmRelayOffS     = 0;
   }
 
   // ─── Default relays (active LOW) ──────────────────────────────────────
@@ -169,6 +171,7 @@ void loadConfig() {
   for (int i = 0; i < MAX_ZONES; i++) {
     zoneStates[i].armed         = false;
     zoneStates[i].alarmState    = ZONE_DISARMED;
+    zoneStates[i].alarmEnteredMs  = 0;
     zoneStates[i].sirenPhaseMs  = 0;
     zoneStates[i].sirenOn       = false;
   }

@@ -8,7 +8,8 @@
 // ─── WiFi management ───────────────────────────────────────────────────────
 bool connectWiFiStation();
 void startConfigAP();
-void ensureWiFiMode();
+void ensureWiFiMode();         // boot-time WiFi connect with retry scheduling
+void wifiStationRetryLoop();   // runtime watchdog: retries, AP→STA recovery
 
 // ─── OTA setup ─────────────────────────────────────────────────────────────
 void initOTA();

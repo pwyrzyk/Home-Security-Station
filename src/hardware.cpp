@@ -1,4 +1,5 @@
 #include "hardware.h"
+#include "event_log.h"
 
 Adafruit_ADS1115 ads[ADS_COUNT];
 
@@ -52,8 +53,15 @@ void readAllAdcChannels() {
 
 void setRelay(uint8_t idx, bool on) {
   if (idx >= MAX_RELAYS) return;
+  if (relayStates[idx] == on) return;        // avoid duplicate events
   relayStates[idx] = on;
   digitalWrite(relayPins[idx], on ? LOW : HIGH);  // active LOW
+
+  char buf[64];
+  const char* rname = config.relays[idx].name;
+  if (strlen(rname) == 0) rname = "?";
+  snprintf(buf, sizeof(buf), "Relay %d '%s' %s", idx + 1, rname, on ? "ON" : "OFF");
+  logRelay(buf);
 }
 
 void applyRelayStates() {

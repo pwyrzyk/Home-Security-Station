@@ -23,7 +23,7 @@ static void publishBinarySensor(uint8_t sensorIdx, const SensorConfig &sc) {
   doc["dev"]["name"] = deviceId;
   doc["dev"]["ids"]  = deviceId;
   doc["dev"]["mf"]   = "ESP32-C3";
-  doc["dev"]["mdl"]  = "Alarm ESP";
+  doc["dev"]["mdl"]  = "Home Alarm System";
 
   String cfgTopic = "homeassistant/binary_sensor/" + uid + "/config";
   String payload;
@@ -51,7 +51,7 @@ static void publishAlarmControlPanel(uint8_t zoneIdx) {
   doc["dev"]["name"] = deviceId;
   doc["dev"]["ids"]  = deviceId;
   doc["dev"]["mf"]   = "ESP32-C3";
-  doc["dev"]["mdl"]  = "Alarm ESP";
+  doc["dev"]["mdl"]  = "Home Alarm System";
 
   String cfgTopic = "homeassistant/alarm_control_panel/" + uid + "/config";
   String payload;
@@ -79,7 +79,7 @@ static void publishSwitchRelay(uint8_t relayIdx) {
   doc["dev"]["name"] = deviceId;
   doc["dev"]["ids"]  = deviceId;
   doc["dev"]["mf"]   = "ESP32-C3";
-  doc["dev"]["mdl"]  = "Alarm ESP";
+  doc["dev"]["mdl"]  = "Home Alarm System";
 
   String cfgTopic = "homeassistant/switch/" + uid + "/config";
   String payload;
