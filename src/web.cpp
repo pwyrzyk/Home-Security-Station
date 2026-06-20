@@ -7,29 +7,20 @@
 #include "network.h"
 #include "event_log.h"
 #include <ArduinoJson.h>
-
-// ─── JSON document sizing (ArduinoJson v7 pool sizes) ─────────────────────
-#define JSON_SIZE_STATUS   4096   // apiStatus: 8 zones + 16 sensors + 4 relays + 2 din + 16 ext
-#define JSON_SIZE_SENSORS  8192   // apiSensorsConfig: 16 sensors x 13 fields
-#define JSON_SIZE_NETWORK   1024   // apiNetworkConfig: 7 string/number fields
-#define JSON_SIZE_EXT      3072   // apiExtSensorsConfig: 16 sensors x 5 fields
-#define JSON_SIZE_ZONES    4096   // apiZonesConfig: 8 zones x 12 fields
-
-// Helper: serialize JSON with overflow check
-#define SERIALIZE_AND_SEND(doc, req) \
-  do { \
-    String buf; \
-    size_t len = serializeJson(doc, buf); \
-    if (len == 0) { \
-      Serial.printf("[WEB] JSON overflow in %s (capacity=%u)\n", __func__, (unsigned)(doc.capacity())); \
-      req->send(500, "text/plain", "JSON overflow"); \
-    } else { \
-      req->send(200, "application/json", buf); \
-    } \
-  } while(0)
 #include <Update.h>
 
 AsyncWebServer server(HTTP_PORT);
+
+// ─── Heap guard ────────────────────────────────────────────────────────────
+#define HEAP_SAFETY_THRESHOLD 25000   // 25 KB minimum free heap
+
+static bool checkHeap(AsyncWebServerRequest *req) {
+  if (ESP.getFreeHeap() < HEAP_SAFETY_THRESHOLD) {
+    req->send(503, "application/json", "{\"error\":\"low_memory\",\"retry_ms\":5000}");
+    return false;
+  }
+  return true;
+}
 
 // ─── JSON API helpers ──────────────────────────────────────────────────────
 
@@ -46,6 +37,7 @@ static void apiStatus(AsyncWebServerRequest *req) {
 
   JsonArray zones = root["zones"].to<JsonArray>();
   for (int i = 0; i < MAX_ZONES; i++) {
+    yield();
     JsonObject z = zones.add<JsonObject>();
     z["id"]    = i + 1;
     z["name"]  = config.zones[i].name;
@@ -53,14 +45,15 @@ static void apiStatus(AsyncWebServerRequest *req) {
     z["enabled"] = config.zones[i].enabled;
     z["state"] = zoneAlarmStateStr(zoneStates[i].alarmState);
     z["label"] = zoneAlarmStateLabel(zoneStates[i].alarmState);
-    // Collect associated sensor labels
     String sensList;
+    sensList.reserve(200);
     for (int s = 0; s < TOTAL_SENSORS; s++) {
       if (config.sensors[s].type != SENSOR_DISABLED && (config.sensors[s].zoneMask & (1U << i))) {
         if (sensList.length()) sensList += ", ";
         sensList += "T" + String(s + 1);
       }
     }
+    yield();
     for (int s = 0; s < MAX_EXT_SENSORS; s++) {
       if (config.extSensors[s].enabled && (config.extSensors[s].zoneMask & (1U << i))) {
         if (sensList.length()) sensList += ", ";
@@ -72,6 +65,7 @@ static void apiStatus(AsyncWebServerRequest *req) {
 
   JsonArray sensors = root["sensors"].to<JsonArray>();
   for (int i = 0; i < TOTAL_SENSORS; i++) {
+    yield();
     JsonObject s = sensors.add<JsonObject>();
     s["id"]     = i + 1;
     s["name"]   = config.sensors[i].name;
@@ -82,6 +76,7 @@ static void apiStatus(AsyncWebServerRequest *req) {
 
   JsonArray relays = root["relays"].to<JsonArray>();
   for (int i = 0; i < MAX_RELAYS; i++) {
+    yield();
     JsonObject r = relays.add<JsonObject>();
     r["id"]      = i + 1;
     r["name"]    = config.relays[i].name;
@@ -93,6 +88,7 @@ static void apiStatus(AsyncWebServerRequest *req) {
 
   JsonArray dins = root["din"].to<JsonArray>();
   for (int i = 0; i < MAX_DINPUTS; i++) {
+    yield();
     JsonObject d = dins.add<JsonObject>();
     d["id"]    = i + 1;
     d["state"] = dinputStates[i];
@@ -100,6 +96,7 @@ static void apiStatus(AsyncWebServerRequest *req) {
 
   JsonArray ext = root["ext_sensors"].to<JsonArray>();
   for (int i = 0; i < MAX_EXT_SENSORS; i++) {
+    yield();
     JsonObject e = ext.add<JsonObject>();
     e["id"]       = i + 1;
     e["name"]     = config.extSensors[i].name;
@@ -109,6 +106,7 @@ static void apiStatus(AsyncWebServerRequest *req) {
   }
 
   String buf;
+  buf.reserve(3000);
   serializeJson(doc, buf);
   req->send(200, "application/json", buf);
 }
@@ -120,6 +118,7 @@ static void apiSensorsConfig(AsyncWebServerRequest *req) {
     JsonDocument doc;
     JsonArray arr = doc.to<JsonArray>();
     for (int i = 0; i < TOTAL_SENSORS; i++) {
+      yield();
       JsonObject s = arr.add<JsonObject>();
       s["id"]         = i + 1;
       s["name"]       = config.sensors[i].name;
@@ -515,6 +514,9 @@ small{color:#86868b;font-size:12px}
 </div>
 <script>
 let data={};
+let _pendingLoad = false;
+let _pendingRefresh = false;
+let _pendingEventLog = false;
 
 function rangeClass(raw, lo, hi){
   if(raw>=lo && raw<=hi) return 'in-range';
@@ -536,15 +538,20 @@ function rangeBar(raw, lo, hi, cls){
 }
 
 async function load(){
-  const r=await fetch('/api/status');
-  data=await r.json();
+  if(_pendingLoad) return;
+  _pendingLoad=true;
+  try{
+    const r=await fetch('/api/status');
+    data=await r.json();
   document.getElementById('sysInfo').textContent=
     data.device+' | '+data.firmware+' | http://alarm.local | WiFi: '+data.wifi+' | RSSI: '+data.rssi+' dBm';
   renderZones(data.zones);
   renderSensors(data.sensors);
   renderRelays(data.relays);
   renderExtSensors(data.ext_sensors);
-  if(data.apMode) document.getElementById('apInfo').style.display='block';
+    if(data.apMode) document.getElementById('apInfo').style.display='block';
+  }catch(e){}
+  _pendingLoad=false;
 }
 
 function renderExtSensors(a){
@@ -792,45 +799,55 @@ async function saveExtSensors(){
 async function loadSensors(){const r=await fetch('/api/sensors');renderSensorCards(await r.json());}
 
 async function refreshExtLive(){
-  const r=await fetch('/api/extsensors');
-  const a=await r.json();
-  a.forEach(e=>{
-    let card=document.getElementById('ecard_'+e.id);
-    if(!card) return;
-    let st=e.enabled?(e.active?'active':'idle'):'disabled';
-    card.className='sens-card '+st;
-    let dot=document.getElementById('edot_'+e.id);
-    if(dot){ dot.className='sdot '+(e.enabled?(e.active?'active':'idle'):'none'); }
-    let stEl=document.getElementById('estate_'+e.id);
-    if(stEl){ stEl.textContent=e.enabled?(e.active?'Active':'Idle'):'disabled'; }
-  });
+  if(_pendingRefresh) return;
+  _pendingRefresh=true;
+  try{
+    const r=await fetch('/api/extsensors');
+    const a=await r.json();
+    a.forEach(e=>{
+      let card=document.getElementById('ecard_'+e.id);
+      if(!card) return;
+      let st=e.enabled?(e.active?'active':'idle'):'disabled';
+      card.className='sens-card '+st;
+      let dot=document.getElementById('edot_'+e.id);
+      if(dot){ dot.className='sdot '+(e.enabled?(e.active?'active':'idle'):'none'); }
+      let stEl=document.getElementById('estate_'+e.id);
+      if(stEl){ stEl.textContent=e.enabled?(e.active?'Active':'Idle'):'disabled'; }
+    });
+  }catch(e){}
+  _pendingRefresh=false;
 }
 
 let sensorRefreshTimer=null;
 async function refreshSensorLive(){
-  const r=await fetch('/api/sensors');
-  const a=await r.json();
-  a.forEach(s=>{
-    let card=document.getElementById('card_'+s.id);
-    if(!card) return;
-    let cls=s.type==='disabled'?'disabled':s.state;
-    card.className='sens-card '+cls;
-    let dot=document.getElementById('dot_'+s.id);
-    if(dot){ dot.className='sdot '+(s.type==='disabled'?'none':dotClass(s.state)); }
-    let st=document.getElementById('state_'+s.id);
-    if(st){ st.textContent=s.type==='disabled'?'disabled':s.state; }
-    let rw=document.getElementById('raw_'+s.id);
-    if(rw){ rw.textContent=s.raw+' mV'; rw.style.color=s.type==='disabled'?'#aeaeb2':stateColor(s.state); }
-    let sLo=s.standbyMin||0, sHi=s.standbyMax||2000;
-    let dLo=s.detectMin||8000, dHi=(s.detectMax===65535||s.detectMax===0)?65535:s.detectMax;
-    let fLo=s.faultMin||30000, fHi=(s.faultMax===65535||s.faultMax===0)?65535:s.faultMax;
-    let u=document.getElementById('bar_sb_'+s.id);
-    if(u) u.innerHTML=srangeBar(s.raw,sLo,sHi,'standby');
-    u=document.getElementById('bar_dt_'+s.id);
-    if(u) u.innerHTML=srangeBar(s.raw,dLo,dHi,'detected');
-    u=document.getElementById('bar_ft_'+s.id);
-    if(u) u.innerHTML=srangeBar(s.raw,fLo,fHi,'faultbar');
-  });
+  if(_pendingRefresh) return;
+  _pendingRefresh=true;
+  try{
+    const r=await fetch('/api/sensors');
+    const a=await r.json();
+    a.forEach(s=>{
+      let card=document.getElementById('card_'+s.id);
+      if(!card) return;
+      let cls=s.type==='disabled'?'disabled':s.state;
+      card.className='sens-card '+cls;
+      let dot=document.getElementById('dot_'+s.id);
+      if(dot){ dot.className='sdot '+(s.type==='disabled'?'none':dotClass(s.state)); }
+      let st=document.getElementById('state_'+s.id);
+      if(st){ st.textContent=s.type==='disabled'?'disabled':s.state; }
+      let rw=document.getElementById('raw_'+s.id);
+      if(rw){ rw.textContent=s.raw+' mV'; rw.style.color=s.type==='disabled'?'#aeaeb2':stateColor(s.state); }
+      let sLo=s.standbyMin||0, sHi=s.standbyMax||2000;
+      let dLo=s.detectMin||8000, dHi=(s.detectMax===65535||s.detectMax===0)?65535:s.detectMax;
+      let fLo=s.faultMin||30000, fHi=(s.faultMax===65535||s.faultMax===0)?65535:s.faultMax;
+      let u=document.getElementById('bar_sb_'+s.id);
+      if(u) u.innerHTML=srangeBar(s.raw,sLo,sHi,'standby');
+      u=document.getElementById('bar_dt_'+s.id);
+      if(u) u.innerHTML=srangeBar(s.raw,dLo,dHi,'detected');
+      u=document.getElementById('bar_ft_'+s.id);
+      if(u) u.innerHTML=srangeBar(s.raw,fLo,fHi,'faultbar');
+    });
+  }catch(e){}
+  _pendingRefresh=false;
 }
 async function saveSensors(){
   const body=new URLSearchParams();
@@ -891,10 +908,13 @@ function setEventLogFilter(f){
   loadEventLog();
 }
 async function loadEventLog(){
-  const r=await fetch('/api/eventlog');
-  const txt=await r.text();
+  if(_pendingEventLog) return;
+  _pendingEventLog=true;
+  try{
+    const r=await fetch('/api/eventlog');
+    const txt=await r.text();
   const cacheKey=eventLogFilter+':'+txt;
-  if(cacheKey===lastEventLogText) return;
+  if(cacheKey===lastEventLogText){ _pendingEventLog=false; return; }
   lastEventLogText=cacheKey;
   let a=JSON.parse(txt);
   if(eventLogFilter>=0) a=a.filter(e=>e.type===eventLogFilter);
@@ -917,7 +937,9 @@ async function loadEventLog(){
 </div>`;
   });
   c.innerHTML=h;
-  document.getElementById('logFooter').textContent=`Showing ${a.length} events · 30-day retention · persisted in LittleFS`;
+    document.getElementById('logFooter').textContent=`Showing ${a.length} events · 30-day retention · persisted in LittleFS`;
+  }catch(e){}
+  _pendingEventLog=false;
 }
 async function clearEventLog(){
   if(!confirm('Permanently clear all event logs?')) return;
@@ -996,6 +1018,7 @@ static void apiZonesConfig(AsyncWebServerRequest *req) {
     JsonDocument doc;
     JsonArray arr = doc.to<JsonArray>();
     for (int i = 0; i < MAX_ZONES; i++) {
+      yield();
       JsonObject z = arr.add<JsonObject>();
       z["id"]          = i + 1;
       z["name"]        = config.zones[i].name;
@@ -1010,12 +1033,14 @@ static void apiZonesConfig(AsyncWebServerRequest *req) {
       z["alarmRelayOffS"]     = config.zones[i].alarmRelayOffS;
     // Collect associated sensor labels
     String sensList;
+    sensList.reserve(200);
     for (int s = 0; s < TOTAL_SENSORS; s++) {
       if (config.sensors[s].type != SENSOR_DISABLED && (config.sensors[s].zoneMask & (1U << i))) {
         if (sensList.length()) sensList += ", ";
         sensList += "T" + String(s + 1);
       }
     }
+    yield();
     for (int s = 0; s < MAX_EXT_SENSORS; s++) {
       if (config.extSensors[s].enabled && (config.extSensors[s].zoneMask & (1U << i))) {
         if (sensList.length()) sensList += ", ";
@@ -1088,7 +1113,7 @@ static void handleOTAUpload(AsyncWebServerRequest *req, String filename, size_t 
 
 void initWebServer() {
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *req) {
-    req->send(200, "text/html", HTML);
+    req->send_P(200, "text/html", HTML);
   });
 
   server.on("/api/ota", HTTP_POST, [](AsyncWebServerRequest *req) {

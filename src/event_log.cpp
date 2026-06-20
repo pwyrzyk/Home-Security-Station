@@ -115,6 +115,7 @@ String getEventLogJson() {
   }
 
   String buf;
+  buf.reserve(3000);
   serializeJson(doc, buf);
   return buf;
 }
