@@ -89,7 +89,7 @@ enum SensorState : uint8_t {
   SENSOR_FAULT  = 2
 };
 
-// ─── Zone alarm states ─────────────────────────────────────────────────────
+// ─── Zone alarm states (internal engine) ────────────────────────────────────
 enum ZoneAlarmState : uint8_t {
   ZONE_DISARMED   = 0,
   ZONE_ARMED_IDLE = 1,
@@ -97,6 +97,37 @@ enum ZoneAlarmState : uint8_t {
   ZONE_ALARM      = 3,
   ZONE_ARMING     = 4,   // exit delay active, sensors ignored
   ZONE_DISARMING  = 5    // entry delay active, time to disarm before alarm
+};
+
+// ─── HA-compatible global alarm states ──────────────────────────────────────
+// These are the ONLY values published to HA via the state topic.
+// ARMING/DISARMING from ZoneAlarmState map to PENDING — never published directly.
+enum class AlarmState : uint8_t {
+  DISARMED            = 0,
+  ARMED_HOME          = 1,
+  ARMED_AWAY          = 2,
+  ARMED_NIGHT         = 3,
+  ARMED_VACATION      = 4,
+  ARMED_CUSTOM_BYPASS = 5,
+  PENDING             = 6,   // exit delay or entry delay active
+  TRIGGERED           = 7    // any zone in ZONE_ALARM
+};
+
+// ─── Alarm Mode identifiers (HA-compatible) ─────────────────────────────────
+enum class AlarmMode : uint8_t {
+  DISARMED            = 0,
+  ARMED_HOME          = 1,
+  ARMED_AWAY          = 2,
+  ARMED_NIGHT         = 3,
+  ARMED_VACATION      = 4,
+  ARMED_CUSTOM_BYPASS = 5,
+  NUM_MODES           = 6
+};
+
+// ─── Alarm Mode Profile (persisted per mode) ────────────────────────────────
+struct AlarmModeProfile {
+  uint8_t zoneMask;         // bitmask: bit 0 = Zone1 … bit 7 = Zone8
+  bool    defined;          // false = this mode has no profile configured
 };
 
 // ─── Relay modes ───────────────────────────────────────────────────────────
@@ -195,6 +226,14 @@ struct Config {
   ZoneConfig   zones[MAX_ZONES];
   RelayConfig  relays[MAX_RELAYS];
   DigitalInputConfig dinputs[MAX_DINPUTS];
+
+  // ─── Alarm Mode Profiles ──────────────────────────────────────────────
+  // Indexed by AlarmMode (0=DISARMED .. 5=ARMED_CUSTOM_BYPASS)
+  AlarmModeProfile modeProfiles[6];
+
+  // ─── HA Discovery settings ─────────────────────────────────────────────
+  bool haDiscoveryEnabled;
+  char haDiscoveryPrefix[40];
 };
 
 // ─── Globals ───────────────────────────────────────────────────────────────
@@ -240,6 +279,21 @@ extern bool relayManualOverride[MAX_RELAYS];
 extern bool relayManualState[MAX_RELAYS];
 extern bool dinputStates[MAX_DINPUTS];
 extern ExtSensorState extSensorStates[MAX_EXT_SENSORS];
+
+// ─── Global alarm context (runtime only — NOT persisted) ───────────────────
+struct AlarmContext {
+  AlarmMode activeMode;           // currently selected mode (runtime only)
+  AlarmState globalState;         // derived global state → published to HA
+  uint8_t   activeZoneMask;       // resolved from activeMode profile
+
+  // Last trigger tracking
+  uint8_t   lastTriggerZoneId;    // 1-based zone that last triggered
+  uint8_t   lastTriggerSensorId;  // 1-based sensor that last triggered
+  uint32_t  lastTriggerTimeMs;
+  char      lastTriggerSensorName[24];
+  char      lastTriggerZoneName[24];
+};
+extern AlarmContext alarmCtx;
 
 // ─── Functions ─────────────────────────────────────────────────────────────
 void setDefaults();

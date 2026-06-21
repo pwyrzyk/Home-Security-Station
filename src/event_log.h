@@ -6,7 +6,8 @@
 enum EventType : uint8_t {
   EVENT_ALARM  = 0,
   EVENT_SYSTEM = 1,
-  EVENT_RELAY  = 2
+  EVENT_RELAY  = 2,
+  EVENT_SENSOR = 3
 };
 
 // ─── Single event entry ─────────────────────────────────────────────────────
@@ -29,5 +30,6 @@ void eventLogInit();
 void logAlarm(const char* desc);
 void logSystem(const char* desc);
 void logRelay(const char* desc);
+void logSensor(const char* desc);
 void clearEventLog();
 String getEventLogJson();           // last 30 entries within retention window

@@ -20,6 +20,8 @@ bool relayManualState[MAX_RELAYS];
 bool dinputStates[MAX_DINPUTS];
 ExtSensorState extSensorStates[MAX_EXT_SENSORS];
 
+AlarmContext alarmCtx;
+
 unsigned long lastNtpTime = 0;
 
 void computeDeviceIdentifiers() {
@@ -104,6 +106,21 @@ void setDefaults() {
   config.dinputs[1].pin       = DIN_DISARM_ALL;
   config.dinputs[1].activeLow = true;
   config.dinputs[1].debounceMs = 50;
+
+  // ─── Default Alarm Mode Profiles ──────────────────────────────────────
+  // DISARMED: always empty mask, always defined (read-only in UI)
+  config.modeProfiles[(uint8_t)AlarmMode::DISARMED].zoneMask = 0;
+  config.modeProfiles[(uint8_t)AlarmMode::DISARMED].defined  = true;
+
+  // Sensible factory defaults (all zones disabled → user must configure)
+  for (int m = 1; m < 6; m++) {
+    config.modeProfiles[m].zoneMask = 0;
+    config.modeProfiles[m].defined  = false;
+  }
+
+  // ─── Default HA Discovery settings ────────────────────────────────────
+  config.haDiscoveryEnabled = true;
+  strlcpy(config.haDiscoveryPrefix, "homeassistant", sizeof(config.haDiscoveryPrefix));
 }
 
 void saveConfig() {
@@ -160,6 +177,61 @@ void loadConfig() {
   // ─── Migrate: force Siren relay zoneId to 0 (follow all zones) ────────
   if (config.relays[0].mode == RELAY_FOLLOW_ZONE && config.relays[0].zoneId != 0) {
     config.relays[0].zoneId = 0;
+    saveConfig();
+  }
+
+  // ─── Migrate: populate mode profiles if uninitialized (old config) ────
+  bool modeMigrationNeeded = false;
+  for (int m = 0; m < 6; m++) {
+    if (config.modeProfiles[m].defined && config.modeProfiles[m].zoneMask == 0 && m == 0) {
+      // DISARMED with defined=true and zoneMask=0 is valid
+      continue;
+    }
+    // Check if profile appears uninitialized (garbage from old EEPROM)
+    if (config.modeProfiles[m].zoneMask > 0xFF || config.modeProfiles[m].defined > 1) {
+      modeMigrationNeeded = true;
+      break;
+    }
+  }
+  // If all profiles have defined=false and zero masks, this is a migration from old config
+  bool allUndefined = true;
+  for (int m = 0; m < 6; m++) {
+    if (config.modeProfiles[m].defined) { allUndefined = false; break; }
+  }
+  if (allUndefined || modeMigrationNeeded) {
+    config.modeProfiles[(uint8_t)AlarmMode::DISARMED].zoneMask = 0;
+    config.modeProfiles[(uint8_t)AlarmMode::DISARMED].defined  = true;
+    for (int m = 1; m < 6; m++) {
+      config.modeProfiles[m].zoneMask = 0;
+      config.modeProfiles[m].defined  = false;
+    }
+    saveConfig();
+  }
+
+  // ─── Migrate: HA discovery settings ───────────────────────────────────
+  // Validate haDiscoveryPrefix contains only printable ASCII (EPROM corruption guard)
+  bool prefixValid = true;
+  if (config.haDiscoveryPrefix[0] == 0) {
+    prefixValid = false;
+  } else {
+    for (int i = 0; i < (int)sizeof(config.haDiscoveryPrefix); i++) {
+      char c = config.haDiscoveryPrefix[i];
+      if (c == 0) break;
+      if (c < 32 || c > 126) { prefixValid = false; break; }
+    }
+  }
+  // Ensure null termination
+  config.haDiscoveryPrefix[sizeof(config.haDiscoveryPrefix) - 1] = 0;
+
+  if (!prefixValid) {
+    strlcpy(config.haDiscoveryPrefix, "homeassistant", sizeof(config.haDiscoveryPrefix));
+    config.haDiscoveryEnabled = true;
+    saveConfig();
+  }
+
+  // Validate haDiscoveryEnabled is 0 or 1
+  if (config.haDiscoveryEnabled != 0 && config.haDiscoveryEnabled != 1) {
+    config.haDiscoveryEnabled = true;
     saveConfig();
   }
 

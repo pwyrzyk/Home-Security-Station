@@ -2,6 +2,7 @@
 #include "sensors.h"
 #include "zones.h"
 #include "alarm.h"
+#include "alarm_mode.h"
 #include "hardware.h"
 #include "mqtt.h"
 #include "network.h"
@@ -34,6 +35,10 @@ static void apiStatus(AsyncWebServerRequest *req) {
   root["wifi"]     = wifiConnected ? "connected" : (apMode ? "ap" : "disconnected");
   root["rssi"]     = wifiConnected ? WiFi.RSSI() : 0;
   root["apMode"]   = apMode;
+
+  // ─── Global alarm state ──────────────────────────────────────────────
+  root["activeMode"]  = alarmModeToHaString(alarmCtx.activeMode);
+  root["globalState"] = alarmStateToHaString(alarmCtx.globalState);
 
   JsonArray zones = root["zones"].to<JsonArray>();
   for (int i = 0; i < MAX_ZONES; i++) {
@@ -249,6 +254,57 @@ static void apiZoneCommand(AsyncWebServerRequest *req) {
   req->send(200, "application/json", "{\"ok\":true}");
 }
 
+static void apiModeSet(AsyncWebServerRequest *req) {
+  String modeArg = req->arg("mode");
+  if (modeArg.length() == 0) {
+    req->send(400, "application/json", "{\"error\":\"missing mode parameter\"}");
+    return;
+  }
+
+  if (modeArg == "disarmed") {
+    disarmMode("web user");
+    alarmCtx.globalState = deriveGlobalAlarmState();
+    publishGlobalAlarmState();
+    publishActiveProfile();
+    publishZoneTopics();
+  } else if (modeArg == "armed_home") {
+    armMode(AlarmMode::ARMED_HOME, "web user");
+    alarmCtx.globalState = deriveGlobalAlarmState();
+    publishGlobalAlarmState();
+    publishActiveProfile();
+    publishZoneTopics();
+  } else if (modeArg == "armed_away") {
+    armMode(AlarmMode::ARMED_AWAY, "web user");
+    alarmCtx.globalState = deriveGlobalAlarmState();
+    publishGlobalAlarmState();
+    publishActiveProfile();
+    publishZoneTopics();
+  } else if (modeArg == "armed_night") {
+    armMode(AlarmMode::ARMED_NIGHT, "web user");
+    alarmCtx.globalState = deriveGlobalAlarmState();
+    publishGlobalAlarmState();
+    publishActiveProfile();
+    publishZoneTopics();
+  } else if (modeArg == "armed_vacation") {
+    armMode(AlarmMode::ARMED_VACATION, "web user");
+    alarmCtx.globalState = deriveGlobalAlarmState();
+    publishGlobalAlarmState();
+    publishActiveProfile();
+    publishZoneTopics();
+  } else if (modeArg == "armed_custom_bypass") {
+    armMode(AlarmMode::ARMED_CUSTOM_BYPASS, "web user");
+    alarmCtx.globalState = deriveGlobalAlarmState();
+    publishGlobalAlarmState();
+    publishActiveProfile();
+    publishZoneTopics();
+  } else {
+    req->send(400, "application/json", "{\"error\":\"unknown mode\"}");
+    return;
+  }
+
+  req->send(200, "application/json", "{\"ok\":true}");
+}
+
 static void apiRelayCommand(AsyncWebServerRequest *req) {
   String path = req->url();
   int lastSlash = path.lastIndexOf('/');
@@ -422,10 +478,12 @@ small{color:#86868b;font-size:12px}
 .log-row.alarm{border-left-color:#ff3b30}
 .log-row.system{border-left-color:#0071e3}
 .log-row.relay{border-left-color:#ff9500}
+.log-row.sensor{border-left-color:#34c759}
 .log-badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:600;color:#fff;white-space:nowrap;min-width:64px;justify-content:center;letter-spacing:0.02em}
 .log-badge.alarm{background:#ff3b30}
 .log-badge.system{background:#0071e3}
 .log-badge.relay{background:#ff9500}
+.log-badge.sensor{background:#34c759}
 .log-time{font-size:12px;color:#86868b;white-space:nowrap;min-width:140px;font-variant-numeric:tabular-nums}
 .log-desc{font-size:13px;color:#1d1d1f;line-height:1.4;word-break:break-word}
 .log-empty{text-align:center;padding:60px 20px;color:#aeaeb2;font-size:15px}
@@ -437,6 +495,12 @@ small{color:#86868b;font-size:12px}
 .filter-btn{padding:6px 14px;border:1.5px solid #e5e5ea;border-radius:10px;background:#fff;color:#86868b;cursor:pointer;font-size:12px;font-weight:500;transition:all 0.2s}
 .filter-btn:hover{border-color:#0071e3;color:#0071e3}
 .filter-btn.active{border-color:#0071e3;background:#f0f7ff;color:#0071e3;font-weight:600}
+.mode-grid-row{display:flex;gap:8px;flex-wrap:wrap}
+.mode-btn{border:2px solid #e5e5ea;border-radius:12px;padding:10px 14px;background:#fff;cursor:pointer;font-size:13px;font-weight:500;color:#1d1d1f;transition:all 0.2s;white-space:nowrap}
+.mode-btn:hover{border-color:#0071e3;background:#f0f7ff}
+.mode-btn.active{border-color:#34c759;background:#f0fff4;font-weight:600;color:#34c759;box-shadow:0 0 0 2px rgba(52,199,89,0.2)}
+.mode-btn.triggered{border-color:#ff3b30;background:#fff0f0;color:#ff3b30}
+.mode-btn.pending{border-color:#ff9500;background:#fff8f0;color:#ff9500}
 </style></head>
 <body>
 <nav>
@@ -444,11 +508,13 @@ small{color:#86868b;font-size:12px}
 <button onclick="showTab('sensors')" id="tab-sensors">Sensors</button>
 <button onclick="showTab('extsensors')" id="tab-extsensors">External Sensors</button>
 <button onclick="showTab('zones')" id="tab-zones">Zones</button>
+<button onclick="showTab('alarmmodes')" id="tab-alarmmodes">Alarm Modes</button>
 <button onclick="showTab('config')" id="tab-config">Config</button>
 <button onclick="showTab('eventlog')" id="tab-eventlog">Event Log</button>
 </nav>
 <div id="page-dashboard" class="page active"><h1>Home Alarm System</h1>
 <div id="sysInfo" style="font-size:13px;color:#86868b;margin-bottom:12px">Loading...</div>
+<div class="card"><h2>Alarm Mode</h2><div id="modeGrid">Loading...</div></div>
 <div class="card"><h2>Zones</h2><div id="zones">Loading...</div></div>
 <div class="card"><h2>Sensors</h2><div id="sensors">Loading...</div></div>
 <div class="card"><h2>Relays</h2><div id="relays">Loading...</div></div>
@@ -467,6 +533,14 @@ small{color:#86868b;font-size:12px}
 <div style="margin-top:12px">
 <button class="btn btn-save" onclick="saveZones()">Save All Zones</button>
 <span id="zoneMsg" style="font-size:13px;margin-left:12px"></span>
+</div>
+</div>
+<div id="page-alarmmodes" class="page"><h1>Alarm Mode Configuration</h1>
+<div style="font-size:11px;color:#86868b;margin-bottom:16px">Configure which zones are active in each Home Assistant-compatible alarm mode.</div>
+<div class="card" id="alarmModesMatrix">Loading...</div>
+<div style="margin-top:12px">
+<button class="btn btn-save" onclick="saveAlarmModes()">Save Alarm Modes</button>
+<span id="alarmModeMsg" style="font-size:13px;margin-left:12px"></span>
 </div>
 </div>
 <div id="page-sensors" class="page"><h1>Sensor Configuration</h1>
@@ -506,6 +580,7 @@ small{color:#86868b;font-size:12px}
 <button class="filter-btn" id="filter0" onclick="setEventLogFilter(0)">🔴 Alarm</button>
 <button class="filter-btn" id="filter1" onclick="setEventLogFilter(1)">🔵 System</button>
 <button class="filter-btn" id="filter2" onclick="setEventLogFilter(2)">🟠 Relay</button>
+<button class="filter-btn" id="filter3" onclick="setEventLogFilter(3)">🟢 Sensor</button>
 </div>
 <button class="btn btn-danger" onclick="clearEventLog()">Clear Log</button>
 </div>
@@ -545,6 +620,7 @@ async function load(){
     data=await r.json();
   document.getElementById('sysInfo').textContent=
     data.device+' | '+data.firmware+' | http://alarm.local | WiFi: '+data.wifi+' | RSSI: '+data.rssi+' dBm';
+  renderModeGrid();
   renderZones(data.zones);
   renderSensors(data.sensors);
   renderRelays(data.relays);
@@ -552,6 +628,34 @@ async function load(){
     if(data.apMode) document.getElementById('apInfo').style.display='block';
   }catch(e){}
   _pendingLoad=false;
+}
+
+function renderModeGrid() {
+  const modes = [
+    { id: 'disarmed',            icon: '🔓', label: 'Disarmed' },
+    { id: 'armed_home',          icon: '🏠', label: 'Armed Home' },
+    { id: 'armed_away',          icon: '🚗', label: 'Armed Away' },
+    { id: 'armed_night',         icon: '🌙', label: 'Armed Night' },
+    { id: 'armed_vacation',      icon: '✈️', label: 'Armed Vac.' },
+    { id: 'armed_custom_bypass', icon: '⚙️', label: 'Cust. Bypass' }
+  ];
+  const active = data.activeMode || 'disarmed';
+  const gs = data.globalState || 'disarmed';
+  let h = '<div class="mode-grid-row">';
+  modes.forEach(m => {
+    let cls = 'mode-btn';
+    if (m.id === active) cls += ' active';
+    if (gs === 'triggered' && m.id === active) cls += ' triggered';
+    if (gs === 'pending' && m.id === active) cls += ' pending';
+    h += '<button class="' + cls + '" onclick="setMode(\'' + m.id + '\')">' + m.icon + ' ' + m.label + '</button>';
+  });
+  h += '</div>';
+  document.getElementById('modeGrid').innerHTML = h;
+}
+
+async function setMode(mode) {
+  await fetch('/api/mode/set?mode=' + encodeURIComponent(mode));
+  load();
 }
 
 function renderExtSensors(a){
@@ -926,8 +1030,8 @@ async function loadEventLog(){
   }
   let h='';
   a.forEach(e=>{
-    const cls=e.type===0?'alarm':e.type===2?'relay':'system';
-    const badge=e.type===0?'🔴 ALARM':e.type===2?'🟠 RELAY':'🔵 SYSTEM';
+    const cls=e.type===0?'alarm':e.type===2?'relay':e.type===3?'sensor':'system';
+    const badge=e.type===0?'🔴 ALARM':e.type===2?'🟠 RELAY':e.type===3?'🟢 SENSOR':'🔵 SYSTEM';
     const d=new Date(e.ts*1000);
     const ts=d.toLocaleDateString()+' '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     h+=`<div class="log-row ${cls}">
@@ -946,6 +1050,93 @@ async function clearEventLog(){
   await fetch('/api/eventlog/clear',{method:'POST'});
   loadEventLog();
 }
+const modeLabels = {
+  'disarmed':            '🔓 Disarmed',
+  'armed_home':          '🏠 Armed Home',
+  'armed_away':          '🚗 Armed Away',
+  'armed_night':         '🌙 Armed Night',
+  'armed_vacation':      '✈️ Armed Vacation',
+  'armed_custom_bypass': '⚙️ Custom Bypass'
+};
+
+function renderAlarmModes(modes) {
+  let h = '<div style="overflow-x:auto">';
+  h += '<table style="width:100%;border-collapse:collapse">';
+  h += '<thead><tr>';
+  h += '<th style="text-align:left;padding:10px 12px;font-size:13px;color:#86868b;font-weight:600;width:200px">Alarm Mode</th>';
+  for (let z = 1; z <= 8; z++) {
+    let zn = 'Z' + z;
+    // try to get zone name from the data if loaded
+    if (data.zones && data.zones[z-1] && data.zones[z-1].name) {
+      zn = data.zones[z-1].name;
+    }
+    h += '<th style="text-align:center;padding:10px 8px;font-size:12px;color:#86868b;font-weight:500">' + zn + '</th>';
+  }
+  h += '</tr></thead><tbody>';
+
+  modes.forEach((m, idx) => {
+    const isDisarmed = m.mode === 'disarmed';
+    const label = modeLabels[m.mode] || m.mode;
+    h += '<tr style="' + (isDisarmed ? 'opacity:0.5;background:#f9f9fb' : '') + '">';
+    h += '<td style="padding:14px 12px;font-weight:600;font-size:14px;white-space:nowrap;border-bottom:1px solid #f0f0f5">' + label + '</td>';
+    for (let z = 0; z < 8; z++) {
+      const checked = m.zones[z] ? 'checked' : '';
+      const disabled = isDisarmed ? 'disabled' : '';
+      h += '<td style="text-align:center;padding:12px 8px;border-bottom:1px solid #f0f0f5">';
+      h += '<input type="checkbox" id="m' + idx + '_z' + (z+1) + '" ' + checked + ' ' + disabled;
+      h += ' style="width:22px;height:22px;accent-color:#0071e3;cursor:' + (isDisarmed ? 'not-allowed' : 'pointer') + '"';
+      if (!isDisarmed) h += ' onchange="validateAlarmModes()"';
+      h += '>';
+      h += '</td>';
+    }
+    h += '</tr>';
+  });
+  h += '</tbody></table></div>';
+  document.getElementById('alarmModesMatrix').innerHTML = h;
+}
+
+function validateAlarmModes() {
+  let warnings = [];
+  for (let m = 1; m <= 5; m++) {
+    let anyChecked = false;
+    for (let z = 1; z <= 8; z++) {
+      const el = document.getElementById('m' + m + '_z' + z);
+      if (el && el.checked) { anyChecked = true; break; }
+    }
+    if (!anyChecked) {
+      const keys = Object.keys(modeLabels);
+      const name = keys[m] || ('Mode ' + m);
+      warnings.push(name + ' has no zones assigned');
+    }
+  }
+  const el = document.getElementById('alarmModeMsg');
+  if (warnings.length) {
+    el.innerHTML = '<span style="color:#ff9500">⚠️ ' + warnings.join('<br>') + '</span>';
+  } else {
+    el.textContent = '';
+  }
+}
+
+async function loadAlarmModes() {
+  const r = await fetch('/api/alarmmodes');
+  const modes = await r.json();
+  renderAlarmModes(modes);
+}
+
+async function saveAlarmModes() {
+  const body = new URLSearchParams();
+  for (let m = 0; m < 6; m++) {
+    for (let z = 1; z <= 8; z++) {
+      const el = document.getElementById('m' + m + '_z' + z);
+      body.set('m' + m + '_z' + z, el && el.checked ? '1' : '0');
+    }
+  }
+  const r = await fetch('/api/alarmmodes', { method: 'POST', body });
+  const d = await r.json();
+  document.getElementById('alarmModeMsg').textContent = d.saved ? 'Saved.' : (d.error || 'Error.');
+  loadAlarmModes();
+}
+
 function showTab(t){
   if(sensorRefreshTimer){clearInterval(sensorRefreshTimer);sensorRefreshTimer=null;}
   if(eventLogTimer){clearInterval(eventLogTimer);eventLogTimer=null;}
@@ -958,6 +1149,7 @@ function showTab(t){
   if(t=='zones')loadZones();
   if(t=='extsensors'){loadExtSensors();sensorRefreshTimer=setInterval(refreshExtLive,2000);}
   if(t=='eventlog'){loadEventLog();eventLogTimer=setInterval(loadEventLog,10000);}
+  if(t=='alarmmodes')loadAlarmModes();
 }
 async function uploadFirmware(){
   const file=document.getElementById('otaFile').files[0];
@@ -1006,6 +1198,50 @@ static void apiExtSensorsConfig(AsyncWebServerRequest *req) {
         config.extSensors[i].zoneMask = (uint16_t)req->arg((prefix + "_zones").c_str()).toInt();
       }
     }
+    saveConfig();
+    req->send(200, "application/json", "{\"ok\":true,\"saved\":true}");
+  }
+}
+
+// ─── Alarm Modes config API ─────────────────────────────────────────────────
+
+static void apiAlarmModesConfig(AsyncWebServerRequest *req) {
+  if (req->method() == HTTP_GET) {
+    JsonDocument doc;
+    JsonArray arr = doc.to<JsonArray>();
+    const char* modeNames[6] = {
+      "disarmed", "armed_home", "armed_away",
+      "armed_night", "armed_vacation", "armed_custom_bypass"
+    };
+    for (int m = 0; m < 6; m++) {
+      JsonObject obj = arr.add<JsonObject>();
+      obj["mode"]     = modeNames[m];
+      obj["zoneMask"] = config.modeProfiles[m].zoneMask;
+      obj["defined"]  = config.modeProfiles[m].defined;
+      JsonArray zones = obj["zones"].to<JsonArray>();
+      for (int z = 0; z < MAX_ZONES; z++) {
+        zones.add((bool)(config.modeProfiles[m].zoneMask & (1U << z)));
+      }
+    }
+    String buf;
+    serializeJson(doc, buf);
+    req->send(200, "application/json", buf);
+  } else if (req->method() == HTTP_POST) {
+    for (int m = 0; m < 6; m++) {
+      uint8_t mask = 0;
+      for (int z = 0; z < MAX_ZONES; z++) {
+        String key = "m" + String(m) + "_z" + String(z + 1);
+        if (req->arg(key) == "1") {
+          mask |= (1U << z);
+        }
+      }
+      config.modeProfiles[m].zoneMask = mask;
+      config.modeProfiles[m].defined = true;
+    }
+    // DISARMED always has empty mask regardless of form input
+    config.modeProfiles[(uint8_t)AlarmMode::DISARMED].zoneMask = 0;
+    config.modeProfiles[(uint8_t)AlarmMode::DISARMED].defined  = true;
+
     saveConfig();
     req->send(200, "application/json", "{\"ok\":true,\"saved\":true}");
   }
@@ -1122,6 +1358,8 @@ void initWebServer() {
 
   server.on("/api/extsensors", HTTP_GET, apiExtSensorsConfig);
   server.on("/api/extsensors", HTTP_POST, apiExtSensorsConfig);
+  server.on("/api/alarmmodes", HTTP_GET, apiAlarmModesConfig);
+  server.on("/api/alarmmodes", HTTP_POST, apiAlarmModesConfig);
   server.on("/api/zones", HTTP_GET, apiZonesConfig);
   server.on("/api/zones", HTTP_POST, apiZonesConfig);
   server.on("/api/status", HTTP_GET, apiStatus);
@@ -1129,6 +1367,7 @@ void initWebServer() {
   server.on("/api/sensors", HTTP_POST, apiSensorsConfig);
   server.on("/api/network", HTTP_GET, apiNetworkConfig);
   server.on("/api/network", HTTP_POST, apiNetworkConfig);
+  server.on("/api/mode/set", HTTP_GET, apiModeSet);
   server.on("/api/restart", HTTP_GET, apiRestart);
   server.on("/api/reconnect", HTTP_GET, apiReconnect);
 

@@ -38,7 +38,7 @@ static void loadFromLittleFS() {
   EventLogEntry buf;
   while (f.readBytes((char*)&buf, sizeof(EventLogEntry)) == sizeof(EventLogEntry)) {
     // Validate entry before accepting
-    if (buf.type <= EVENT_RELAY && buf.timestamp > 0 && buf.description[0] != 0) {
+    if (buf.type <= EVENT_SENSOR && buf.timestamp > 0 && buf.description[0] != 0) {
       writeEntry(buf);
     }
   }
@@ -75,6 +75,15 @@ void logSystem(const char* desc) {
 void logRelay(const char* desc) {
   EventLogEntry entry;
   entry.type = EVENT_RELAY;
+  entry.timestamp = currentEpoch();
+  strlcpy(entry.description, desc, sizeof(entry.description));
+  writeEntry(entry);
+  persistEntry(entry);
+}
+
+void logSensor(const char* desc) {
+  EventLogEntry entry;
+  entry.type = EVENT_SENSOR;
   entry.timestamp = currentEpoch();
   strlcpy(entry.description, desc, sizeof(entry.description));
   writeEntry(entry);

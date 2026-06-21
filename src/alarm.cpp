@@ -1,10 +1,12 @@
 #include "alarm.h"
+#include "alarm_mode.h"
 #include "sensors.h"
 #include "zones.h"
 #include "hardware.h"
 #include "event_log.h"
 
 void (*onZoneStateChanged)(uint8_t zoneId) = nullptr;
+void (*onGlobalStateChanged)(AlarmState newState) = nullptr;
 
 static uint32_t lastAlarmLoopMs = 0;
 
@@ -226,6 +228,10 @@ static void processDigitalInputs() {
     // Mark as handled (edge-triggered)
     dinputStates[i] = false;
 
+    char buf[100];
+    snprintf(buf, sizeof(buf), "Digital input %d pressed (action=%d zone=%d)", i+1, (int)cfg.action, cfg.zoneId);
+    logSystem(buf);
+
     lastZoneCmdSource = "digital input";
     switch (cfg.action) {
       case INPUT_ACTION_ARM_ZONE:
@@ -329,4 +335,29 @@ void alarmLoop() {
 
   // Sync relay outputs
   syncRelays();
+
+  // ─── Evaluate global alarm state and publish transitions ──────────────
+  static AlarmState lastGlobalState = AlarmState::DISARMED;
+  AlarmState currentState = deriveGlobalAlarmState();
+
+  if (currentState != lastGlobalState) {
+    // On entering TRIGGERED, capture last trigger info
+    if (currentState == AlarmState::TRIGGERED && lastGlobalState != AlarmState::TRIGGERED) {
+      // Find the zone that just entered ALARM
+      for (uint8_t z = 1; z <= MAX_ZONES; z++) {
+        uint8_t idx = z - 1;
+        if (config.zones[idx].enabled && zoneStates[idx].alarmState == ZONE_ALARM) {
+          updateLastTrigger(z);
+          break;
+        }
+      }
+    }
+
+    lastGlobalState = currentState;
+    alarmCtx.globalState = currentState;
+
+    if (onGlobalStateChanged) {
+      onGlobalStateChanged(currentState);
+    }
+  }
 }

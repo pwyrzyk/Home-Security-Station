@@ -5,6 +5,7 @@
 #include "sensors.h"
 #include "zones.h"
 #include "alarm.h"
+#include "alarm_mode.h"
 #include "network.h"
 #include "mqtt.h"
 #include "ha_discovery.h"
@@ -121,6 +122,18 @@ void loop() {
     }
   } else {
     digitalWrite(LED_BUILTIN, LOW);
+  }
+
+  // ─── Heap warning ──────────────────────────────────────────────────────
+  static uint32_t lastHeapLogMs = 0;
+  if (now - lastHeapLogMs >= 60000) {
+    lastHeapLogMs = now;
+    uint32_t freeHeap = ESP.getFreeHeap();
+    if (freeHeap < 30000) {
+      char buf[80];
+      snprintf(buf, sizeof(buf), "Low heap: %u bytes free", freeHeap);
+      logSystem(buf);
+    }
   }
 
   delay(2);

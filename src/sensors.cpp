@@ -1,4 +1,14 @@
 #include "sensors.h"
+#include "event_log.h"
+
+static const char* sensorStateLabel(SensorState s) {
+  switch (s) {
+    case SENSOR_ACTIVE: return "ACTIVE";
+    case SENSOR_FAULT:  return "FAULT";
+    default:            return "IDLE";
+  }
+}
+
 
 void sensorsLoop() {
   uint32_t now = millis();
@@ -63,14 +73,21 @@ void sensorsLoop() {
 
     // ─── On/Off delay timers ────────────────────────────────────────────
     if (finalFault && st.state != SENSOR_FAULT) {
+      SensorState prevState = st.state;
       st.state        = SENSOR_FAULT;
       st.lastChangeMs = now;
+      char buf[64];
+      snprintf(buf, sizeof(buf), "T%d '%s' %s -> FAULT raw=%u mV", i+1, cfg.name, sensorStateLabel(prevState), raw);
+      logSensor(buf);
     } else if (finalActive && st.state == SENSOR_IDLE) {
       if (st.activeSinceMs == 0) st.activeSinceMs = now;
       if (now - st.activeSinceMs >= cfg.onDelayMs) {
         st.state        = SENSOR_ACTIVE;
         st.lastChangeMs = now;
         st.idleSinceMs  = 0;
+        char buf[64];
+        snprintf(buf, sizeof(buf), "T%d '%s' IDLE -> ACTIVE raw=%u mV", i+1, cfg.name, raw);
+        logSensor(buf);
       }
     } else if (!finalActive && !finalFault && st.state == SENSOR_ACTIVE) {
       if (st.idleSinceMs == 0) st.idleSinceMs = now;
@@ -78,6 +95,9 @@ void sensorsLoop() {
         st.state        = SENSOR_IDLE;
         st.lastChangeMs = now;
         st.activeSinceMs = 0;
+        char buf[64];
+        snprintf(buf, sizeof(buf), "T%d '%s' ACTIVE -> IDLE raw=%u mV", i+1, cfg.name, raw);
+        logSensor(buf);
       }
     } else {
       if (finalActive) st.idleSinceMs   = 0;
