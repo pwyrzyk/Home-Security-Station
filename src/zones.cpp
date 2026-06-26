@@ -82,8 +82,8 @@ const char* zoneAlarmStateLabel(ZoneAlarmState s) {
     case ZONE_ARMED_IDLE: return "Armed";
     case ZONE_PREALARM:   return "Pre-alarm";
     case ZONE_ALARM:      return "Alarm";
-    case ZONE_ARMING:     return "Arming...";
-    case ZONE_DISARMING:  return "Disarming...";
+    case ZONE_ARMING:     return "Pending Exit";
+    case ZONE_DISARMING:  return "Pending Entry";
     default:              return "Disarmed";
   }
 }
