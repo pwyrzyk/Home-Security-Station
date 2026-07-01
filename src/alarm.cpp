@@ -101,31 +101,20 @@ static void setZoneAlarmState(uint8_t zoneId, ZoneAlarmState newState) {
 
 // ─── Sync relay outputs based on zone states and relay config ─────────────
 static void syncRelays() {
-  // Auto-clear manual overrides when any zone is armed
-  bool anyArmed = false;
-  for (int z = 0; z < MAX_ZONES; z++) {
-    if (config.zones[z].enabled && zoneStates[z].alarmState != ZONE_DISARMED) {
-      anyArmed = true;
-      break;
-    }
-  }
-  if (anyArmed) {
-    for (int r = 0; r < MAX_RELAYS; r++) {
-      relayManualOverride[r] = false;
-    }
-  }
-
   for (int r = 0; r < MAX_RELAYS; r++) {
     RelayConfig &rc = config.relays[r];
-    if (!rc.enabled) {
-      setRelay(r, false);
-      continue;
-    }
-    // Manual override takes priority when all zones are disarmed
+
+    // Manual override takes priority regardless of enabled/armed state
     if (relayManualOverride[r]) {
       setRelay(r, relayManualState[r]);
       continue;
     }
+
+    if (!rc.enabled) {
+      setRelay(r, false);
+      continue;
+    }
+
     switch (rc.mode) {
       case RELAY_OFF:
         setRelay(r, false);
@@ -162,51 +151,63 @@ static void syncRelays() {
         break;
       }
       case RELAY_PULSE_MODE: {
-        // "Alarm" relay: cycles ON/OFF from the zone that entered alarm earliest
+        // Alarm relay with configurable on/off timing per zone.
+        // Uses the timing from the zone that entered alarm earliest.
         bool anyAlarm = false;
         uint8_t onSecs = 0, offSecs = 0;
         uint32_t oldestMs = UINT32_MAX;
         for (int z = 0; z < MAX_ZONES; z++) {
           if (config.zones[z].enabled && config.zones[z].alarmRelayEnabled &&
               zoneStates[z].alarmState == ZONE_ALARM) {
+            anyAlarm = true;
             if (zoneStates[z].alarmEnteredMs < oldestMs) {
               oldestMs = zoneStates[z].alarmEnteredMs;
-              anyAlarm = true;
-              if (config.zones[z].alarmRelayOnS > 0 && config.zones[z].alarmRelayOffS > 0) {
-                onSecs = config.zones[z].alarmRelayOnS;
-                offSecs = config.zones[z].alarmRelayOffS;
-              }
-              // if 0/0, leave onSecs/offSecs at 0 for continuous-ON below
+              onSecs  = config.zones[z].alarmRelayOnS;
+              offSecs = config.zones[z].alarmRelayOffS;
             }
           }
         }
-        static uint32_t pulsePhaseMs[MAX_RELAYS] = {0};
-        static bool     pulseOn[MAX_RELAYS] = {false};
-        if (anyAlarm) {
-          if (onSecs == 0 || offSecs == 0) {
-            // Continuous ON when both are 0
-            pulseOn[r] = false;
-            pulsePhaseMs[r] = 0;
-            setRelay(r, true);
-          } else {
-            uint32_t now = millis();
-            if (pulseOn[r]) {
-              if (now - pulsePhaseMs[r] >= ((uint32_t)onSecs * 1000UL)) {
-                pulseOn[r] = false;
-                pulsePhaseMs[r] = now;
-              }
-            } else {
-              if (now - pulsePhaseMs[r] >= ((uint32_t)offSecs * 1000UL) || pulsePhaseMs[r] == 0) {
-                pulseOn[r] = true;
-                pulsePhaseMs[r] = now;
-              }
-            }
-            setRelay(r, pulseOn[r]);
-          }
-        } else {
+        static uint32_t pulsePhaseMs[MAX_RELAYS]   = {0};
+        static bool     pulseOn[MAX_RELAYS]         = {false};
+        static bool     pulseOneShotDone[MAX_RELAYS] = {false};
+
+        if (!anyAlarm) {
           pulseOn[r] = false;
           pulsePhaseMs[r] = 0;
+          pulseOneShotDone[r] = false;
           setRelay(r, false);
+        } else if (onSecs == 0) {
+          // Continuous ON — stays on until disarmed
+          pulseOn[r] = false;
+          pulsePhaseMs[r] = 0;
+          setRelay(r, true);
+        } else if (offSecs == 0) {
+          // One-shot: ON for onSecs, then OFF permanently
+          if (!pulseOneShotDone[r]) {
+            if (pulsePhaseMs[r] == 0) pulsePhaseMs[r] = millis();
+            if (millis() - pulsePhaseMs[r] >= ((uint32_t)onSecs * 1000UL)) {
+              pulseOn[r] = false;
+              pulseOneShotDone[r] = true;
+              setRelay(r, false);
+            } else {
+              setRelay(r, true);
+            }
+          }
+        } else {
+          // Cycling: ON for onSecs, OFF for offSecs, repeat
+          uint32_t tnow = millis();
+          if (pulseOn[r]) {
+            if (tnow - pulsePhaseMs[r] >= ((uint32_t)onSecs * 1000UL)) {
+              pulseOn[r] = false;
+              pulsePhaseMs[r] = tnow;
+            }
+          } else {
+            if (tnow - pulsePhaseMs[r] >= ((uint32_t)offSecs * 1000UL) || pulsePhaseMs[r] == 0) {
+              pulseOn[r] = true;
+              pulsePhaseMs[r] = tnow;
+            }
+          }
+          setRelay(r, pulseOn[r]);
         }
         break;
       }
@@ -297,6 +298,7 @@ void alarmLoop() {
             zs.sirenOn = true;
             zs.sirenPhaseMs = now;
             zs.alarmEnteredMs = now;
+            zs.sirenOneShotDone = false;
           }
         }
         break;
@@ -310,20 +312,33 @@ void alarmLoop() {
           zs.sirenOn = true;
           zs.sirenPhaseMs = now;
           zs.alarmEnteredMs = now;
+          zs.sirenOneShotDone = false;
         }
         break;
 
       // ─── ALARM ────────────────────────────────────────────────────────
       case ZONE_ALARM: {
-        // Siren cycling: ON for sirenOnS, OFF for sirenOffS, repeat
-        if (zc.sirenOnS > 0 && zc.sirenOffS > 0) {
+        if (zc.sirenOnS == 0) {
+          // Continuous ON — stays on until disarmed
+          zs.sirenOn = true;
+        } else if (zc.sirenOffS == 0) {
+          // One-shot: ON for sirenOnS, then OFF permanently
+          if (!zs.sirenOneShotDone) {
+            if (zs.sirenPhaseMs == 0) zs.sirenPhaseMs = now;
+            if (now - zs.sirenPhaseMs >= ((uint32_t)zc.sirenOnS * 1000UL)) {
+              zs.sirenOn = false;
+              zs.sirenOneShotDone = true;
+            } else {
+              zs.sirenOn = true;
+            }
+          }
+        } else {
+          // Cycling: ON for sirenOnS, OFF for sirenOffS, repeat
           uint32_t phaseDuration = zs.sirenOn ? ((uint32_t)zc.sirenOnS * 1000UL) : ((uint32_t)zc.sirenOffS * 1000UL);
           if (now - zs.sirenPhaseMs >= phaseDuration) {
             zs.sirenOn = !zs.sirenOn;
             zs.sirenPhaseMs = now;
           }
-        } else {
-          zs.sirenOn = true;   // continuous ON
         }
         break;
       }

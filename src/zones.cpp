@@ -36,6 +36,7 @@ void zoneDisarm(uint8_t zoneId) {
   zoneStates[idx].preAlarmStartMs = 0;
   zoneStates[idx].sirenPhaseMs = 0;
   zoneStates[idx].sirenOn = false;
+  zoneStates[idx].sirenOneShotDone = false;
   notifyZoneChange(zoneId);
 }
 

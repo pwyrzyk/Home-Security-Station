@@ -269,6 +269,7 @@ struct ZoneStateData {
   uint32_t alarmEnteredMs;  // timestamp when zone entered ZONE_ALARM
   uint32_t sirenPhaseMs;    // start of current siren ON/OFF phase
   bool sirenOn;             // true = siren relay should be ON this phase
+  bool sirenOneShotDone;    // true = one-shot siren ON period has completed
 };
 
 extern ZoneStateData zoneStates[MAX_ZONES];

@@ -180,6 +180,76 @@ void loadConfig() {
     saveConfig();
   }
 
+  // ─── Migrate: sirenEnabled / alarmRelayEnabled flags (added later) ─────
+  // These bool fields were added after initial EEPROM layout.
+  // Old EEPROM bytes may be 0 (false) or garbage (true).  Migrate each flag
+  // independently: if an enabled zone has a flag as false, set it to true
+  // (matching factory defaults in setDefaults()).
+  {
+    bool migrated = false;
+    for (int z = 0; z < MAX_ZONES; z++) {
+      if (!config.zones[z].enabled) continue;
+      if (!config.zones[z].sirenEnabled) {
+        config.zones[z].sirenEnabled = true;
+        migrated = true;
+      }
+      if (!config.zones[z].alarmRelayEnabled) {
+        config.zones[z].alarmRelayEnabled = true;
+        migrated = true;
+      }
+    }
+    if (migrated) saveConfig();
+  }
+
+  // ─── Migrate: alarmRelayOnS / alarmRelayOffS (added later) ──────────────
+  // These uint8_t fields were added after initial EEPROM layout. On old
+  // configs the bytes contain adjacent struct data (e.g. zone name chars
+  // like 'Z'=90, 'o'=111, 'n'=110, space=32). These fall in the printable
+  // ASCII range 32–122 and would cause rapid relay cycling (e.g. 90s ON /
+  // 110s OFF). Real users would never intentionally set these to ASCII-
+  // range values. Reset to 0 (continuous-ON, factory default).
+  {
+    bool migrated = false;
+    for (int z = 0; z < MAX_ZONES; z++) {
+      if (!config.zones[z].enabled) continue;
+      uint8_t onS = config.zones[z].alarmRelayOnS;
+      uint8_t offS = config.zones[z].alarmRelayOffS;
+      // Printable ASCII range or zero: 0 is valid (continuous-ON), but
+      // 32–122 are almost certainly name-string spillover from old EEPROM.
+      if (onS >= 32 && onS <= 122) {
+        config.zones[z].alarmRelayOnS = 0;
+        migrated = true;
+      }
+      if (offS >= 32 && offS <= 122) {
+        config.zones[z].alarmRelayOffS = 0;
+        migrated = true;
+      }
+    }
+    if (migrated) saveConfig();
+  }
+
+  // ─── Migrate: sirenOnS / sirenOffS garbage values ───────────────────────
+  // These are part of the original ZoneConfig layout, but on older configs
+  // that predate the UI they may have been set to arbitrary values.
+  // Clamp to 0 if they look like ASCII spillover (32–122).
+  {
+    bool migrated = false;
+    for (int z = 0; z < MAX_ZONES; z++) {
+      if (!config.zones[z].enabled) continue;
+      uint8_t onS  = config.zones[z].sirenOnS;
+      uint8_t offS = config.zones[z].sirenOffS;
+      if (onS >= 32 && onS <= 122) {
+        config.zones[z].sirenOnS = 0;
+        migrated = true;
+      }
+      if (offS >= 32 && offS <= 122) {
+        config.zones[z].sirenOffS = 0;
+        migrated = true;
+      }
+    }
+    if (migrated) saveConfig();
+  }
+
   // ─── Migrate: populate mode profiles if uninitialized (old config) ────
   bool modeMigrationNeeded = false;
   for (int m = 0; m < 6; m++) {
@@ -246,6 +316,7 @@ void loadConfig() {
     zoneStates[i].alarmEnteredMs  = 0;
     zoneStates[i].sirenPhaseMs  = 0;
     zoneStates[i].sirenOn       = false;
+    zoneStates[i].sirenOneShotDone = false;
   }
   for (int i = 0; i < MAX_RELAYS; i++) {
     relayStates[i] = false;

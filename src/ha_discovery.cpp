@@ -97,29 +97,6 @@ static void publishMainAlarmPanel() {
   publishDiscoveryPayload(cfgTopic, doc);
 }
 
-// ─── Per-zone armed binary_sensor ──────────────────────────────────────────
-
-static void publishZoneArmedSensor(uint8_t zoneIdx) {
-  uint8_t zid = zoneIdx + 1;
-  JsonDocument doc;
-  String uid = deviceId + "-zone-" + String(zid) + "-armed";
-
-  doc["~"]            = mqttBase;
-  doc["uniq_id"]      = uid;
-  doc["name"]         = String(config.zones[zoneIdx].name) + " Armed";
-  doc["stat_t"]       = "~/zones/" + String(zid) + "/armed";
-  doc["avty_t"]       = "~/status/running";
-  doc["pl_avail"]     = "true";
-  doc["pl_not_avail"] = "false";
-  doc["pl_on"]        = "true";
-  doc["pl_off"]       = "false";
-  doc["ic"]           = "mdi:shield-lock";
-  addDeviceInfo(doc);
-
-  String cfgTopic = String(config.haDiscoveryPrefix) + "/binary_sensor/" + uid + "/config";
-  publishDiscoveryPayload(cfgTopic, doc);
-}
-
 // ─── Per-zone state sensor (text) ──────────────────────────────────────────
 
 static void publishZoneStateSensor(uint8_t zoneIdx) {
@@ -233,6 +210,14 @@ static void cleanupStaleDiscoveries() {
     mqtt.publish(oldTopic.c_str(), "", true);  // empty retained = delete
     delay(2);
   }
+
+  // Delete stale "Zone N Armed" binary_sensor configs (removed — redundant)
+  for (uint8_t z = 0; z < MAX_ZONES; z++) {
+    String armedUid = deviceId + "-zone-" + String(z + 1) + "-armed";
+    String armedTopic = String(config.haDiscoveryPrefix) + "/binary_sensor/" + armedUid + "/config";
+    mqtt.publish(armedTopic.c_str(), "", true);  // empty retained = delete
+    delay(2);
+  }
 }
 
 // ─── Publish all discoveries ───────────────────────────────────────────────
@@ -243,7 +228,7 @@ void haPublishAllDiscoveries() {
 
   logSystem("HA autodiscovery: publishing...");
 
-  // Clean up stale old-style per-zone alarm panels from previous firmware
+  // Clean up stale old-style per-zone alarm panels + armed binary_sensors
   cleanupStaleDiscoveries();
 
   // Main alarm panel (single entity)
@@ -257,10 +242,8 @@ void haPublishAllDiscoveries() {
     delay(10);
   }
 
-  // Per-zone armed + state entities
+  // Per-zone state entities
   for (uint8_t z = 0; z < MAX_ZONES; z++) {
-    publishZoneArmedSensor(z);
-    delay(5);
     publishZoneStateSensor(z);
     delay(5);
   }

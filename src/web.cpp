@@ -1352,9 +1352,9 @@ void initWebServer() {
     req->send_P(200, "text/html", HTML);
   });
 
-  server.on("/api/ota", HTTP_POST, [](AsyncWebServerRequest *req) {
-    req->send(200, "text/plain", "OK");
-  }, handleOTAUpload);
+  server.on("/api/ota", HTTP_POST,
+    [](AsyncWebServerRequest *req) { /* response sent by upload handler */ },
+    handleOTAUpload);
 
   server.on("/api/extsensors", HTTP_GET, apiExtSensorsConfig);
   server.on("/api/extsensors", HTTP_POST, apiExtSensorsConfig);
