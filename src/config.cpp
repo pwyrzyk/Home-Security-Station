@@ -196,25 +196,34 @@ void loadConfig() {
     saveConfig();
   }
 
-  // ─── Migrate: sirenEnabled / alarmRelayEnabled flags (added later) ─────
-  // These bool fields were added after initial EEPROM layout.
-  // Old EEPROM bytes may be 0 (false) or garbage (true).  Migrate each flag
-  // independently: if an enabled zone has a flag as false, set it to true
-  // (matching factory defaults in setDefaults()).
+  // ─── EEPROM struct stability: force bool flags to safe defaults ───────
+  // bool fields added after original EEPROM layout can shift byte offset
+  // across firmware updates. Force-set on every boot to prevent silent
+  // failures (siren/alarm relay not firing, alarm mode profiles broken).
   {
-    bool migrated = false;
+    bool fixed = false;
     for (int z = 0; z < MAX_ZONES; z++) {
       if (!config.zones[z].enabled) continue;
       if (!config.zones[z].sirenEnabled) {
         config.zones[z].sirenEnabled = true;
-        migrated = true;
+        fixed = true;
       }
       if (!config.zones[z].alarmRelayEnabled) {
         config.zones[z].alarmRelayEnabled = true;
-        migrated = true;
+        fixed = true;
       }
     }
-    if (migrated) saveConfig();
+    // Alarm mode profiles: once defined in UI, always force to defined=true
+    for (int m = 1; m < 6; m++) {
+      if (config.modeProfiles[m].zoneMask != 0 && !config.modeProfiles[m].defined) {
+        config.modeProfiles[m].defined = true;
+        fixed = true;
+      }
+    }
+    if (fixed) {
+      saveConfig();
+      Serial.println("[BOT] EEPROM: corrected corrupted bool fields");
+    }
   }
 
   // ─── Migrate: alarmRelayOnS / alarmRelayOffS (added later) ──────────────
