@@ -879,7 +879,7 @@ function renderInfoCards(){
     {icon:'🚨', title:'Last Trigger', value:(lt.zoneName?('Z'+lt.zoneId+': '+lt.sensorName):'None'), sub:(lt.timeAgoSec?fmDur(lt.timeAgoSec)+' ago':'')},
     {icon:'📊', title:'Sensors', value:num+ss.idle+'</span> Idle<br>'+num+ss.active+'</span> Active<br>'+num+ss.fault+'</span> Fault', sub:''},
     {icon:'🔌', title:'Relays', value:rlbl+'Siren</span> '+r0+'<br>'+rlbl+'Alarm</span> '+r1+'<br>'+rlbl+'Tamper</span> '+r2+'<br>'+rlbl+'No-Pwr</span> '+r3, sub:''},
-    {icon:'🔧', title:'System', value:d.firmware+'<br><span style="font-size:12px;font-weight:400">Up: '+fmDur(d.uptime)+'<br>Heap: '+(d.heapFree/1024).toFixed(0)+' KB</span>', sub:d.device},
+    {icon:'🔧', title:'System', value:d.firmware+'<br><span style="font-size:12px;font-weight:400">Up: '+fmDur(d.uptime)+'<br>Heap: '+(d.heapFree>80000?'🟢 ':d.heapFree>50000?'🟡 ':d.heapFree>25000?'🟠 ':'🔴 ')+(d.heapFree/1024).toFixed(0)+' KB</span>', sub:d.device},
     {icon:'🌐', title:'Network', value:d.ssid||'WiFi', sub:'IP '+(d.localIP||'')+'<br>RSSI '+d.rssi+' dBm<br>http://alarm.local<br>MQTT '+(d.mqttConnected?'✅':'❌')+'  ·  HA '+(d.haEnabled?'✅':'❌')}
   ];
   let h='';
