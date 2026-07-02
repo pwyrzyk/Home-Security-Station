@@ -8,6 +8,7 @@
 #include "network.h"
 #include "event_log.h"
 #include "auth.h"
+#include "backup.h"
 #include <ArduinoJson.h>
 #include <Update.h>
 
@@ -630,6 +631,16 @@ small{color:var(--muted);font-size:12px}
 <div class="form-row"><div><label>User</label><input id="cfgMqttUser"></div>
 <div><label>Password</label><input id="cfgMqttPass" type="password"></div></div></div>
 <div class="card" id="apInfo" style="display:none"><small>AP Mode active. Connect to <strong id="apSsid"></strong> (password: 12345678) then open http://192.168.4.1</small></div>
+<div class="card"><h2>Backup & Restore</h2>
+<div style="margin:8px 0"><small>Download full system backup (config + event log).</small></div>
+<button class="btn btn-save" onclick="downloadBackup()">Download Backup</button>
+<div style="margin-top:14px"><small>Restore all configuration from a backup file. <strong>Device will reboot after restore.</strong></small></div>
+<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px">
+<input type="file" id="restoreFile" accept=".json" style="flex:1;min-width:200px">
+<button class="btn btn-save" onclick="restoreBackup()">Upload & Restore</button>
+</div>
+<div id="bkMsg" style="margin-top:8px;font-size:13px"></div>
+</div>
 <div class="card"><h2>Firmware Update</h2>
 <div style="margin:8px 0"><small>Select a compiled firmware.bin file to upload via OTA. The device will restart automatically after a successful update.</small></div>
 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -1429,6 +1440,38 @@ function showTab(t){
   if(t=='alarmmodes')loadAlarmModes();
   if(t=='users')loadUsers();
 }
+async function downloadBackup(){
+  try{
+    let r=await fetch('/api/backup');
+    if(r.status===403){document.getElementById('bkMsg').textContent='Admin access required.';return;}
+    let blob=await r.blob();
+    let url=URL.createObjectURL(blob);
+    let a=document.createElement('a');
+    a.href=url;a.download='alarm-backup.json';
+    document.body.appendChild(a);a.click();a.remove();
+    URL.revokeObjectURL(url);
+    document.getElementById('bkMsg').textContent='Backup downloaded.';
+  }catch(e){document.getElementById('bkMsg').textContent='Download failed.';}
+}
+
+async function restoreBackup(){
+  let file=document.getElementById('restoreFile').files[0];
+  if(!file){document.getElementById('bkMsg').textContent='Select a .json backup file.';return;}
+  if(!confirm('Restore will overwrite ALL settings and reboot. Continue?')) return;
+  document.getElementById('bkMsg').textContent='Restoring...';
+  try{
+    let text=await file.text();
+    let r=await fetch('/api/restore',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(text)});
+    let d=await r.json();
+    if(d.ok){
+      document.getElementById('bkMsg').textContent='Restore complete. Restarting...';
+      setTimeout(()=>fetch('/api/restart'),1000);
+    }else{
+      document.getElementById('bkMsg').textContent='Restore failed: '+(d.error||'Unknown error');
+    }
+  }catch(e){document.getElementById('bkMsg').textContent='Restore failed.';}
+}
+
 async function uploadFirmware(){
   const file=document.getElementById('otaFile').files[0];
   if(!file){ document.getElementById('otaMsg').textContent='Please select a .bin file.'; return; }
@@ -1957,6 +2000,31 @@ void initWebServer() {
   server.on("/api/reconnect", HTTP_GET, [](AsyncWebServerRequest *req) {
     if (!requireAuth(req)) return;
     apiReconnect(req);
+  });
+
+  // ─── Backup & Restore (admin only) ───────────────────────────────────
+  server.on("/api/backup", HTTP_GET, [](AsyncWebServerRequest *req) {
+    if (!requireAdmin(req)) return;
+    String json = buildBackupJson();
+    AsyncWebServerResponse *resp = req->beginResponse(200, "application/json", json);
+    resp->addHeader("Content-Disposition", "attachment; filename=\"alarm-backup.json\"");
+    req->send(resp);
+  });
+
+  server.on("/api/restore", HTTP_POST, [](AsyncWebServerRequest *req) {
+    if (!requireAdmin(req)) return;
+    if (!req->hasArg("data")) {
+      req->send(400, "application/json", "{\"error\":\"missing_data\"}");
+      return;
+    }
+    String error;
+    bool ok = applyRestore(req->arg("data").c_str(), error);
+    if (ok) {
+      req->send(200, "application/json", "{\"ok\":true,\"msg\":\"Restore complete. Restart to apply.\"}");
+    } else {
+      String resp = "{\"error\":\"" + error + "\"}";
+      req->send(400, "application/json", resp);
+    }
   });
 
   server.on("/api/eventlog", HTTP_GET, [](AsyncWebServerRequest *req) {
