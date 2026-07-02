@@ -86,8 +86,7 @@ void mqttFlushPostConnect() {
   static bool bootDisarmDone = false;
   if (!bootDisarmDone) {
     bootDisarmDone = true;
-    disarmAllZones();
-    disarmMode("system boot");  // ensure alarmCtx is in sync
+    // State is already restored by restoreArmedState() in main setup
   }
 
   // Clear any stale retained command on /cmd/mode so future reconnects

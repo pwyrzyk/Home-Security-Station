@@ -25,6 +25,7 @@ void zoneArm(uint8_t zoneId) {
       zoneStates[idx].alarmState = ZONE_ARMED_IDLE;
     }
     notifyZoneChange(zoneId);
+    saveArmedState();  // persist for power-fail recovery
   }
 }
 
@@ -38,6 +39,7 @@ void zoneDisarm(uint8_t zoneId) {
   zoneStates[idx].sirenOn = false;
   zoneStates[idx].sirenOneShotDone = false;
   notifyZoneChange(zoneId);
+  saveArmedState();  // persist for power-fail recovery
 }
 
 void zoneToggle(uint8_t zoneId) {

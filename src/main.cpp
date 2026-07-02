@@ -35,9 +35,14 @@ void setup() {
   Serial.println("[BOT] Init hardware...");
   initHardware();
 
-  // Disarm all zones on boot
-  Serial.println("[BOT] Disarming zones...");
-  disarmAllZones();
+  // Restore armed state after power failure
+  Serial.println("[BOT] Restoring alarm state...");
+  restoreArmedState();
+
+  // Clear any spurious digital input triggers from boot
+  for (int i = 0; i < MAX_DINPUTS; i++) {
+    dinputStates[i] = false;
+  }
 
   // ─── LittleFS (must be before WiFi — so WiFi events can be logged) ──
   Serial.println("[BOT] Mounting LittleFS...");

@@ -84,6 +84,7 @@ bool armMode(AlarmMode mode, const char* source) {
 
   alarmCtx.activeMode = mode;
   alarmCtx.activeZoneMask = effectiveMask;
+  saveArmedState();  // persist for power-fail recovery
 
   char buf[100];
   snprintf(buf, sizeof(buf), "Alarm mode set to '%s' by %s (mask=0x%02X)",
@@ -107,6 +108,7 @@ void disarmMode(const char* source) {
 
   alarmCtx.activeMode = AlarmMode::DISARMED;
   alarmCtx.activeZoneMask = 0;
+  saveArmedState();  // persist for power-fail recovery
 
   char buf[80];
   snprintf(buf, sizeof(buf), "Alarm disarmed by %s", source);

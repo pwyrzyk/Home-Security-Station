@@ -1,5 +1,6 @@
 #include "config.h"
 #include "auth.h"
+#include "event_log.h"
 #include <EEPROM.h>
 #include <ESP.h>
 
@@ -144,9 +145,59 @@ void saveConfig() {
   EEPROM.commit();
 }
 
+// ─── Power-fail state persistence ──────────────────────────────────────────
+
+void saveArmedState() {
+  // Build bitmask of currently armed zones
+  uint8_t mask = 0;
+  for (int z = 0; z < MAX_ZONES; z++) {
+    if (zoneStates[z].armed && zoneStates[z].alarmState != ZONE_DISARMED) {
+      mask |= (1U << z);
+    }
+  }
+  config.zoneArmedMask = mask;
+  config.savedActiveMode = (uint8_t)alarmCtx.activeMode;
+  config.stateRestoreValid = (mask != 0);
+  saveConfig();
+
+  char buf[64];
+  snprintf(buf, sizeof(buf), "Armed state saved: mask=0x%02X mode=%d", mask, config.savedActiveMode);
+  logSystem(buf);
+}
+
+void restoreArmedState() {
+  Serial.printf("[BOT] restoreArmedState: valid=%d mask=0x%02X mode=%d\n",
+                config.stateRestoreValid, config.zoneArmedMask, config.savedActiveMode);
+
+  if (!config.stateRestoreValid || config.zoneArmedMask == 0) {
+    Serial.println("[BOT] restoreArmedState: nothing to restore, returning");
+    return;
+  }
+
+  // Re-arm zones from saved bitmask
+  for (int z = 0; z < MAX_ZONES; z++) {
+    if (config.zoneArmedMask & (1U << z)) {
+      zoneStates[z].armed = true;
+      zoneStates[z].armedAtMs = millis();
+      zoneStates[z].alarmState = ZONE_ARMED_IDLE;
+      Serial.printf("[BOT] restoreArmedState: re-armed zone %d\n", z+1);
+    }
+  }
+
+  // Restore active mode
+  alarmCtx.activeMode = (AlarmMode)config.savedActiveMode;
+  alarmCtx.activeZoneMask = config.zoneArmedMask;
+  Serial.printf("[BOT] restoreArmedState: done, mode=%d\n", config.savedActiveMode);
+}
+
 void loadConfig() {
   EEPROM.begin(EEPROM_SIZE);
   EEPROM.get(0, config);
+
+  // Snapshot power-fail armed state BEFORE migrations (they may saveConfig and overwrite)
+  uint8_t  _savedMask = config.zoneArmedMask;
+  uint8_t  _savedMode = config.savedActiveMode;
+  bool     _savedValid = config.stateRestoreValid;
 
   if (config.magic != EEPROM_MAGIC) {
     setDefaults();
@@ -421,4 +472,9 @@ void loadConfig() {
   for (int i = 0; i < MAX_DINPUTS; i++) {
     dinputStates[i] = false;
   }
+
+  // Restore snapshotted power-fail armed state (migrations may have overwritten it)
+  config.zoneArmedMask = _savedMask;
+  config.savedActiveMode = _savedMode;
+  config.stateRestoreValid = _savedValid;
 }

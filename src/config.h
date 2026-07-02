@@ -261,6 +261,11 @@ struct Config {
   bool haDiscoveryEnabled;
   char haDiscoveryPrefix[40];
 
+  // ─── Power-fail safety — saved armed state ───────────────────────────
+  uint8_t  savedActiveMode;        // AlarmMode to restore on boot (0-5)
+  uint8_t  zoneArmedMask;          // bitmask of armed zones
+  bool     stateRestoreValid;      // true = valid armed state to restore
+
   // ─── User accounts ───────────────────────────────────────────────────
   uint8_t    authMigrated;          // EEPROM_AUTH_MIGRATED_FLAG when users[] is primary
   UserEntry  users[MAX_USERS];      // user accounts (replaces adminPasswordHash)
@@ -336,3 +341,5 @@ void setDefaults();
 void saveConfig();
 void loadConfig();
 void computeDeviceIdentifiers();
+void saveArmedState();
+void restoreArmedState();

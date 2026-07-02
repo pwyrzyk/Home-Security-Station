@@ -274,6 +274,17 @@ static void syncRelays() {
 
 // ─── Handle digital input actions ─────────────────────────────────────────
 static void processDigitalInputs() {
+  static bool startupGraceActive = true;
+  if (startupGraceActive) {
+    // Ignore digital inputs for first 3 seconds after boot
+    // (prevents spurious active-low triggers from disarming on restart)
+    if (millis() < 3000) {
+      for (int i = 0; i < MAX_DINPUTS; i++) dinputStates[i] = false;
+      return;
+    }
+    startupGraceActive = false;
+  }
+
   for (int i = 0; i < MAX_DINPUTS; i++) {
     DigitalInputConfig &cfg = config.dinputs[i];
     if (cfg.action == INPUT_ACTION_NONE) continue;
