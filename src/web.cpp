@@ -36,6 +36,41 @@ static void apiStatus(AsyncWebServerRequest *req) {
   root["wifi"]     = wifiConnected ? "connected" : (apMode ? "ap" : "disconnected");
   root["rssi"]     = wifiConnected ? WiFi.RSSI() : 0;
   root["apMode"]   = apMode;
+  root["uptime"]   = millis() / 1000;
+  root["heapFree"] = ESP.getFreeHeap();
+  root["localIP"]  = WiFi.localIP().toString();
+  root["ssid"]     = config.wifiSsid;
+  root["mqttConnected"] = mqtt.connected();
+  root["haEnabled"]     = config.haDiscoveryEnabled;
+
+  // ─── Sensor summary ──────────────────────────────────────────────────
+  {
+    JsonObject ss = root["sensorSummary"].to<JsonObject>();
+    int idle = 0, active = 0, fault = 0;
+    for (int i = 0; i < TOTAL_SENSORS; i++) {
+      if (config.sensors[i].type == SENSOR_DISABLED) continue;
+      switch (sensorStates[i].state) {
+        case SENSOR_IDLE:   idle++;   break;
+        case SENSOR_ACTIVE: active++; break;
+        case SENSOR_FAULT:  fault++;  break;
+      }
+    }
+    ss["idle"] = idle; ss["active"] = active; ss["fault"] = fault;
+  }
+
+  // ─── Last trigger info ───────────────────────────────────────────────
+  {
+    JsonObject lt = root["lastTrigger"].to<JsonObject>();
+    lt["zoneName"]   = alarmCtx.lastTriggerZoneName;
+    lt["sensorName"] = alarmCtx.lastTriggerSensorName;
+    lt["zoneId"]     = alarmCtx.lastTriggerZoneId;
+    lt["sensorId"]   = alarmCtx.lastTriggerSensorId;
+    uint32_t ago = 0;
+    if (alarmCtx.lastTriggerTimeMs > 0) {
+      ago = (millis() - alarmCtx.lastTriggerTimeMs) / 1000;
+    }
+    lt["timeAgoSec"] = ago;
+  }
 
   // ─── Global alarm state ──────────────────────────────────────────────
   root["activeMode"]  = alarmModeToHaString(alarmCtx.activeMode);
@@ -512,8 +547,23 @@ small{color:#86868b;font-size:12px}
 .modal-card input:focus{outline:none;border-color:#0071e3;box-shadow:0 0 0 3px rgba(0,113,227,0.15);background:#fff}
 .modal-card .btn{width:100%;margin-top:16px;padding:12px}
 .modal-card .msg{margin-top:10px;font-size:13px;text-align:center;font-weight:500}
-.logout-btn{padding:8px 16px;margin-left:auto;background:none;border:1.5px solid #ff3b30;border-radius:8px;color:#ff3b30;cursor:pointer;font-size:12px;font-weight:500;transition:all 0.2s}
+.logout-btn{padding:6px 14px;background:none;border:1.5px solid #ff3b30;border-radius:8px;color:#ff3b30;cursor:pointer;font-size:12px;font-weight:500;transition:all 0.2s}
 .logout-btn:hover{background:#ff3b30;color:#fff}
+.nav-right{margin-left:auto;display:flex;align-items:center;gap:10px;padding-right:14px}
+.nav-user{display:flex;align-items:center;gap:5px;font-size:13px;font-weight:500;color:#1d1d1f;white-space:nowrap}
+.nav-user .user-icon{font-size:15px;opacity:0.6}
+.status-bar{background:#fff;border-radius:12px;padding:10px 18px;margin-bottom:16px;display:flex;align-items:center;gap:16px;font-size:12px;color:#86868b;flex-wrap:wrap;box-shadow:0 1px 3px rgba(0,0,0,0.04)}
+.status-bar .stat-dot{width:8px;height:8px;border-radius:50%}
+.status-bar .stat-dot.ok{background:#34c759}
+.status-bar .stat-dot.warn{background:#ff9500}
+.status-bar .stat-dot.bad{background:#ff3b30}
+.info-cards{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
+@media(max-width:800px){.info-cards{grid-template-columns:repeat(2,1fr)}}
+.info-card{background:#fff;border-radius:14px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,0.04);display:flex;flex-direction:column;gap:4px}
+.info-card .ic-icon{font-size:20px;margin-bottom:2px}
+.info-card .ic-title{font-size:11px;color:#86868b;font-weight:500;text-transform:uppercase;letter-spacing:0.03em}
+.info-card .ic-value{font-size:15px;font-weight:600;color:#1d1d1f;line-height:1.5}
+.info-card .ic-sub{font-size:11px;color:#aeaeb2}
 </style></head>
 <body>
 <nav>
@@ -525,9 +575,14 @@ small{color:#86868b;font-size:12px}
 <button onclick="showTab('config')" id="tab-config">Config</button>
 <button onclick="showTab('eventlog')" id="tab-eventlog">Event Log</button>
 <button onclick="showTab('users')" id="tab-users" style="display:none">Users</button>
+<div class="nav-right">
+<span class="nav-user"><span class="user-icon">👤</span> <span id="navUser"></span></span>
+<button class="logout-btn" onclick="doLogout()">Logout</button>
+</div>
 </nav>
 <div id="page-dashboard" class="page active"><h1>Home Alarm System</h1>
-<div id="sysInfo" style="font-size:13px;color:#86868b;margin-bottom:12px">Loading...</div>
+<div class="status-bar" id="statusBar">Loading...</div>
+<div class="info-cards" id="infoCards">Loading...</div>
 <div class="card"><h2>Alarm Mode</h2><div id="modeGrid">Loading...</div></div>
 <div class="card"><h2>Zones</h2><div id="zones">Loading...</div></div>
 <div class="card"><h2>Sensors</h2><div id="sensors">Loading...</div></div>
@@ -666,8 +721,17 @@ async function checkAuth(){
       return false;
     }
     _authRole = (d.role !== undefined) ? d.role : 1;
-    // Show Users tab for admins only
-    document.getElementById('tab-users').style.display = (_authRole===0)?'':'none';
+    // Display username and role
+    document.getElementById('navUser').textContent = (d.username || 'User');
+    // Admin tab visibility
+    let isAdmin = (_authRole===0);
+    document.getElementById('tab-sensors').style.display = isAdmin ? '' : 'none';
+    document.getElementById('tab-extsensors').style.display = isAdmin ? '' : 'none';
+    document.getElementById('tab-zones').style.display = isAdmin ? '' : 'none';
+    document.getElementById('tab-alarmmodes').style.display = isAdmin ? '' : 'none';
+    document.getElementById('tab-config').style.display = isAdmin ? '' : 'none';
+    document.getElementById('tab-eventlog').style.display = isAdmin ? '' : 'none';
+    document.getElementById('tab-users').style.display = isAdmin ? '' : 'none';
     if(d.forcePasswordChange){
       document.getElementById('pwModal').classList.add('show');
       document.getElementById('pwCurrent').focus();
@@ -712,6 +776,11 @@ async function addUser(){
   } else {
     document.getElementById('uMsg').textContent=d.error||'Error.';
   }
+}
+
+async function doLogout(){
+  await fetch('/api/logout',{method:'POST'});
+  window.location.href='/login.html';
 }
 
 async function deleteUser(id,name){
@@ -767,6 +836,50 @@ async function changePassword(){
   }
 }
 
+function fmDur(s){
+  if(s<60) return s+'s';
+  if(s<3600) return Math.floor(s/60)+'m '+(s%60)+'s';
+  return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m';
+}
+
+function renderStatusBar(){
+  let d=data;
+  let wifiOk = d.wifi==='connected';
+  let state = d.globalState||'disarmed';
+  let stateOk = state==='disarmed' || state==='pending';
+  let stateWarn = state==='pending';
+  let dotCls = wifiOk?(stateOk?'ok':(stateWarn?'warn':'bad')):'bad';
+  let statusText = wifiOk?((state==='triggered'?'⚠️ Alarm Active':(state==='disarmed'?'✅ System Ready':'⏳ '+state))):'❌ WiFi Down';
+  let h='<span class="stat-dot '+dotCls+'"></span>';
+  h+='<strong>'+statusText+'</strong>';
+  h+='<span style="margin-left:auto">WiFi: '+d.rssi+' dBm</span>';
+  h+='<span>Up: '+fmDur(d.uptime)+'</span>';
+  h+='<span>Heap: '+(d.heapFree/1024).toFixed(0)+' KB</span>';
+  document.getElementById('statusBar').innerHTML=h;
+}
+
+function renderInfoCards(){
+  let d=data, ss=d.sensorSummary||{}, lt=d.lastTrigger||{};
+  let r0=d.relays&&d.relays[0]?d.relays[0].state?'🔴 ON':'🟢 OFF':'🟢 OFF';
+  let r1=d.relays&&d.relays[1]?d.relays[1].state?'🔴 ON':'🟢 OFF':'🟢 OFF';
+  let r2=d.relays&&d.relays[2]?d.relays[2].state?'🔴 ON':'🟢 OFF':'🟢 OFF';
+  let r3=d.relays&&d.relays[3]?d.relays[3].state?'🔴 ON':'🟢 OFF':'🟢 OFF';
+  let num='<span style="display:inline-block;width:28px;text-align:right;margin-right:6px">';
+  let rlbl='<span style="display:inline-block;width:60px;font-size:14px">';
+  let cards=[
+    {icon:'🚨', title:'Last Trigger', value:(lt.zoneName?('Z'+lt.zoneId+': '+lt.sensorName):'None'), sub:(lt.timeAgoSec?fmDur(lt.timeAgoSec)+' ago':'')},
+    {icon:'📊', title:'Sensors', value:num+ss.idle+'</span> Idle<br>'+num+ss.active+'</span> Active<br>'+num+ss.fault+'</span> Fault', sub:''},
+    {icon:'🔌', title:'Relays', value:rlbl+'Siren</span> '+r0+'<br>'+rlbl+'Alarm</span> '+r1+'<br>'+rlbl+'Tamper</span> '+r2+'<br>'+rlbl+'No-Pwr</span> '+r3, sub:''},
+    {icon:'🔧', title:'System', value:d.firmware, sub:d.device},
+    {icon:'🌐', title:'Network', value:d.ssid||'WiFi', sub:'IP '+(d.localIP||'')+'<br>RSSI '+d.rssi+' dBm<br>http://alarm.local<br>MQTT '+(d.mqttConnected?'✅':'❌')+'  ·  HA '+(d.haEnabled?'✅':'❌')}
+  ];
+  let h='';
+  cards.forEach(c=>{
+    h+='<div class="info-card"><div class="ic-icon">'+c.icon+'</div><div class="ic-title">'+c.title+'</div><div class="ic-value">'+c.value+'</div><div class="ic-sub">'+c.sub+'</div></div>';
+  });
+  document.getElementById('infoCards').innerHTML=h;
+}
+
 async function load(){
   if(_pendingLoad) return;
   _pendingLoad=true;
@@ -779,13 +892,15 @@ async function load(){
     const r=await fetch('/api/status');
     if(r.status===401){window.location.href='/login.html';_pendingLoad=false;return;}
     data=await r.json();
-  document.getElementById('sysInfo').textContent=
-    data.device+' | '+data.firmware+' | http://alarm.local | WiFi: '+data.wifi+' | RSSI: '+data.rssi+' dBm';
+  renderStatusBar();
+  renderInfoCards();
   renderModeGrid();
-  renderZones(data.zones);
-  renderSensors(data.sensors);
-  renderRelays(data.relays);
-  renderExtSensors(data.ext_sensors);
+  if(_authRole===0){
+    renderZones(data.zones);
+    renderSensors(data.sensors);
+    renderRelays(data.relays);
+    renderExtSensors(data.ext_sensors);
+  }
     if(data.apMode) document.getElementById('apInfo').style.display='block';
   }catch(e){}
   _pendingLoad=false;
@@ -1373,6 +1488,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Ne
 <div class="subtext">Default: admin / admin</div>
 </div>
 <script>
+let lastUser = localStorage.getItem('lastUser');
+if (lastUser) document.getElementById('user').value = lastUser;
+
 function togglePw(){
   let e=document.getElementById('pass');
   e.type=e.type==='password'?'text':'password';
@@ -1392,6 +1510,7 @@ async function doLogin(){
     });
     let d=await r.json();
     if(d.ok){
+      localStorage.setItem('lastUser', document.getElementById('user').value);
       msg.className='msg success';
       msg.textContent='Logged in. Redirecting...';
       setTimeout(()=>window.location.href='/',500);
@@ -1499,6 +1618,7 @@ static void apiAuthStatus(AsyncWebServerRequest *req) {
   bool authenticated = false;
   uint8_t role = USER_ROLE_OPERATOR;
   bool forcePwChange = false;
+  const char* username = "";
 
   String token;
   if (req->hasHeader("Cookie")) {
@@ -1517,6 +1637,8 @@ static void apiAuthStatus(AsyncWebServerRequest *req) {
     authenticated = true;
     role = getSessionRole(token.c_str());
     touchSession(token.c_str());
+    // Extract username from session
+    username = getSessionUsername(token.c_str());
     // Check if the logged-in user's hash matches default "admin" hash
     // This serves as the forcePasswordChange indicator
     String defaultHash = hashPassword("admin");
@@ -1530,6 +1652,7 @@ static void apiAuthStatus(AsyncWebServerRequest *req) {
 
   doc["authenticated"]       = authenticated;
   doc["role"]                = role;
+  doc["username"]            = username;
   doc["forcePasswordChange"] = forcePwChange;
 
   String buf;

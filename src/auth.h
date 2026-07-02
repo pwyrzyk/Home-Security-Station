@@ -50,6 +50,7 @@ bool      hasActiveAdmin();
 String   createSession(const char *username, uint8_t role);
 bool     validateSession(const char *token);
 uint8_t  getSessionRole(const char *token);
+const char* getSessionUsername(const char *token);
 void     destroySession(const char *token);
 void     touchSession(const char *token);
 void     purgeExpiredSessions();

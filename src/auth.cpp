@@ -176,6 +176,17 @@ uint8_t getSessionRole(const char *token) {
     return USER_ROLE_OPERATOR;
 }
 
+const char* getSessionUsername(const char *token) {
+    if (!token || strlen(token) != SESSION_ID_LENGTH) return "";
+    for (int i = 0; i < MAX_SESSIONS; i++) {
+        if (!sessions[i].active) continue;
+        if (strcmp(sessions[i].id, token) == 0) {
+            return sessions[i].username;
+        }
+    }
+    return "";
+}
+
 void destroySession(const char *token) {
     if (!token) return;
     for (int i = 0; i < MAX_SESSIONS; i++) {
