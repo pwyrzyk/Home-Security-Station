@@ -75,6 +75,32 @@
 #define MAX_ZONES 8
 #define MAX_RELAYS 4
 #define MAX_DINPUTS 2
+#define MAX_USERS  8
+
+// ─── User roles ──────────────────────────────────────────────────────────────
+enum UserRole : uint8_t {
+  USER_ROLE_ADMIN     = 0,
+  USER_ROLE_OPERATOR  = 1
+};
+
+// ─── Keypad PIN mode suffixes ──────────────────────────────────────────────
+#define KEYPAD_SUFFIX_ARM_HOME     'A'
+#define KEYPAD_SUFFIX_ARM_AWAY     'B'
+#define KEYPAD_SUFFIX_ARM_NIGHT    'C'
+#define KEYPAD_SUFFIX_ARM_VACATION 'D'
+#define KEYPAD_SUFFIX_DISARM       '#'
+
+// ─── Per-user entry ────────────────────────────────────────────────────────
+struct UserEntry {
+  char     username[16];
+  char     passwordHash[65];   // SHA-256 hex for web login
+  char     pin[5];             // 4-digit PIN for keypad (null-terminated)
+  uint8_t  role;               // 0 = admin, 1 = operator
+  bool     active;
+};
+
+// ─── EEPROM migration tracking ─────────────────────────────────────────────
+#define EEPROM_AUTH_MIGRATED_FLAG 0xBB
 
 // ─── Sensor types ──────────────────────────────────────────────────────────
 enum SensorType : uint8_t {
@@ -234,6 +260,10 @@ struct Config {
   // ─── HA Discovery settings ─────────────────────────────────────────────
   bool haDiscoveryEnabled;
   char haDiscoveryPrefix[40];
+
+  // ─── Authentication ──────────────────────────────────────────────────
+  char adminPasswordHash[65];   // SHA-256 hex string (64 chars + null)
+  bool forcePasswordChange;     // true until admin changes default password
 };
 
 // ─── Globals ───────────────────────────────────────────────────────────────

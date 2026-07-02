@@ -1,4 +1,5 @@
 #include "config.h"
+#include "auth.h"
 #include <EEPROM.h>
 #include <ESP.h>
 
@@ -121,6 +122,11 @@ void setDefaults() {
   // ─── Default HA Discovery settings ────────────────────────────────────
   config.haDiscoveryEnabled = true;
   strlcpy(config.haDiscoveryPrefix, "homeassistant", sizeof(config.haDiscoveryPrefix));
+
+  // ─── Default auth settings ─────────────────────────────────────────────
+  String defaultHash = hashPassword("admin");
+  strlcpy(config.adminPasswordHash, defaultHash.c_str(), sizeof(config.adminPasswordHash));
+  config.forcePasswordChange = true;
 }
 
 void saveConfig() {
@@ -276,6 +282,52 @@ void loadConfig() {
       config.modeProfiles[m].defined  = false;
     }
     saveConfig();
+  }
+
+  // ─── Migrate: Auth settings (added later) ────────────────────────────
+  // Check if adminPasswordHash is empty (old EEPROM without auth fields)
+  if (config.adminPasswordHash[0] == '\0') {
+    String defaultHash = hashPassword("admin");
+    strlcpy(config.adminPasswordHash, defaultHash.c_str(), sizeof(config.adminPasswordHash));
+    config.forcePasswordChange = true;
+    saveConfig();
+    Serial.println("[BOT] Auth: initialized default admin password");
+  } else {
+    // Validate hash contains only valid hex chars
+    bool hashValid = true;
+    for (size_t i = 0; i < strlen(config.adminPasswordHash); i++) {
+      char c = config.adminPasswordHash[i];
+      if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+        hashValid = false;
+        break;
+      }
+    }
+    if (!hashValid || strlen(config.adminPasswordHash) != 64) {
+      String defaultHash = hashPassword("admin");
+      strlcpy(config.adminPasswordHash, defaultHash.c_str(), sizeof(config.adminPasswordHash));
+      config.forcePasswordChange = true;
+      saveConfig();
+      Serial.println("[BOT] Auth: reset corrupted password hash to default");
+    }
+  }
+
+  // Validate forcePasswordChange is 0 or 1
+  if (config.forcePasswordChange != 0 && config.forcePasswordChange != 1) {
+    config.forcePasswordChange = true;
+    saveConfig();
+  }
+
+  // ─── Self-heal: if hash doesn't match current binary's hash("admin")
+  //     but forcePasswordChange is true (meaning user hasn't set their own
+  //     password yet), recompute the hash with the current SHA-256 code.
+  //     This prevents "admin/admin" from breaking after OTA updates.
+  {
+    String currentAdminHash = hashPassword("admin");
+    if (strcmp(config.adminPasswordHash, currentAdminHash.c_str()) != 0 && config.forcePasswordChange) {
+      strlcpy(config.adminPasswordHash, currentAdminHash.c_str(), sizeof(config.adminPasswordHash));
+      saveConfig();
+      Serial.println("[BOT] Auth: self-healed admin password hash after firmware update");
+    }
   }
 
   // ─── Migrate: HA discovery settings ───────────────────────────────────

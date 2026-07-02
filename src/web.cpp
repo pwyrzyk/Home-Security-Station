@@ -7,6 +7,7 @@
 #include "mqtt.h"
 #include "network.h"
 #include "event_log.h"
+#include "auth.h"
 #include <ArduinoJson.h>
 #include <Update.h>
 
@@ -501,6 +502,18 @@ small{color:#86868b;font-size:12px}
 .mode-btn.active{border-color:#34c759;background:#f0fff4;font-weight:600;color:#34c759;box-shadow:0 0 0 2px rgba(52,199,89,0.2)}
 .mode-btn.triggered{border-color:#ff3b30;background:#fff0f0;color:#ff3b30}
 .mode-btn.pending{border-color:#ff9500;background:#fff8f0;color:#ff9500}
+.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:200;align-items:center;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal-card{background:#fff;border-radius:20px;padding:36px 32px;width:100%;max-width:380px;box-shadow:0 8px 40px rgba(0,0,0,0.15);animation:fadeIn 0.3s ease}
+.modal-card h2{font-size:22px;font-weight:700;margin-bottom:4px;letter-spacing:-0.02em}
+.modal-card .sub{font-size:13px;color:#86868b;margin-bottom:20px}
+.modal-card label{display:block;margin-top:10px;font-size:12px;color:#86868b;font-weight:500}
+.modal-card input{width:100%;padding:10px 14px;margin-top:4px;border:1.5px solid #e5e5ea;border-radius:10px;background:#f9f9fb;color:#1d1d1f;font-size:14px;font-family:inherit;transition:border-color 0.2s}
+.modal-card input:focus{outline:none;border-color:#0071e3;box-shadow:0 0 0 3px rgba(0,113,227,0.15);background:#fff}
+.modal-card .btn{width:100%;margin-top:16px;padding:12px}
+.modal-card .msg{margin-top:10px;font-size:13px;text-align:center;font-weight:500}
+.logout-btn{padding:8px 16px;margin-left:auto;background:none;border:1.5px solid #ff3b30;border-radius:8px;color:#ff3b30;cursor:pointer;font-size:12px;font-weight:500;transition:all 0.2s}
+.logout-btn:hover{background:#ff3b30;color:#fff}
 </style></head>
 <body>
 <nav>
@@ -587,6 +600,20 @@ small{color:#86868b;font-size:12px}
 <div class="card" id="eventLogContainer" style="padding:0;overflow:hidden">Loading...</div>
 <div class="log-footer" id="logFooter"></div>
 </div>
+<div class="modal-overlay" id="pwModal">
+<div class="modal-card">
+<h2>🔐 Change Password</h2>
+<div class="sub">You must change the default password before continuing.</div>
+<label>Current Password</label>
+<input type="password" id="pwCurrent" placeholder="Enter current password">
+<label>New Password</label>
+<input type="password" id="pwNew" placeholder="At least 4 characters">
+<label>Confirm New Password</label>
+<input type="password" id="pwConfirm" placeholder="Repeat new password">
+<button class="btn btn-save" id="pwBtn" onclick="changePassword()">Change Password</button>
+<div id="pwMsg" class="msg"></div>
+</div>
+</div>
 <script>
 let data={};
 let _pendingLoad = false;
@@ -612,11 +639,82 @@ function rangeBar(raw, lo, hi, cls){
   return '<span class="range-bar" style="background:#e5e5ea"></span>';
 }
 
+let _authChecked = false;
+
+async function checkAuth(){
+  try{
+    const r=await fetch('/api/auth-status');
+    const d=await r.json();
+    if(!d.authenticated){
+      window.location.href='/login.html';
+      return false;
+    }
+    if(d.forcePasswordChange){
+      document.getElementById('pwModal').classList.add('show');
+      document.getElementById('pwCurrent').focus();
+      return true;
+    }
+  }catch(e){}
+  return true;
+}
+
+async function changePassword(){
+  let btn=document.getElementById('pwBtn');
+  let msg=document.getElementById('pwMsg');
+  let cur=document.getElementById('pwCurrent').value;
+  let pw=document.getElementById('pwNew').value;
+  let cf=document.getElementById('pwConfirm').value;
+  msg.className='msg';
+  if(!cur||!pw||!cf){msg.textContent='All fields are required.';return;}
+  if(pw.length<4){msg.textContent='Password must be at least 4 characters.';return;}
+  if(pw!==cf){msg.textContent='Passwords do not match.';return;}
+  if(cur===pw){msg.textContent='New password must differ from current.';return;}
+  btn.disabled=true;
+  btn.textContent='Changing...';
+  try{
+    let r=await fetch('/api/change-password',{
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:'current='+encodeURIComponent(cur)+'&new='+encodeURIComponent(pw)
+    });
+    let d=await r.json();
+    if(d.ok){
+      msg.className='msg success';
+      msg.textContent='Password changed! Loading dashboard...';
+      setTimeout(()=>{
+        document.getElementById('pwModal').classList.remove('show');
+        document.getElementById('pwCurrent').value='';
+        document.getElementById('pwNew').value='';
+        document.getElementById('pwConfirm').value='';
+        msg.textContent='';
+        msg.className='msg';
+        btn.disabled=false;
+        btn.textContent='Change Password';
+        load();
+      },800);
+    }else{
+      msg.textContent=d.message||'Failed to change password.';
+      btn.disabled=false;
+      btn.textContent='Change Password';
+    }
+  }catch(e){
+    msg.textContent='Connection error.';
+    btn.disabled=false;
+    btn.textContent='Change Password';
+  }
+}
+
 async function load(){
   if(_pendingLoad) return;
   _pendingLoad=true;
+  if(!_authChecked){
+    _authChecked=true;
+    let ok=await checkAuth();
+    if(!ok){_pendingLoad=false;return;}
+  }
   try{
     const r=await fetch('/api/status');
+    if(r.status===401){window.location.href='/login.html';_pendingLoad=false;return;}
     data=await r.json();
   document.getElementById('sysInfo').textContent=
     data.device+' | '+data.firmware+' | http://alarm.local | WiFi: '+data.wifi+' | RSSI: '+data.rssi+' dBm';
@@ -1169,6 +1267,233 @@ async function cmd(url){await fetch(url);load();}
 load();setInterval(load,3000);
 </script></body></html>)rawliteral";
 
+// ─── Login page HTML ───────────────────────────────────────────────────────
+
+static const char LOGIN_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Login - Home Alarm</title><style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;background:#f2f2f7;color:#1d1d1f;display:flex;align-items:center;justify-content:center;min-height:100vh;-webkit-font-smoothing:antialiased}
+.login-card{background:#fff;border-radius:20px;padding:40px 36px;width:100%;max-width:380px;box-shadow:0 4px 20px rgba(0,0,0,0.08),0 1px 3px rgba(0,0,0,0.04)}
+.login-card h1{font-size:28px;font-weight:700;text-align:center;margin-bottom:6px;letter-spacing:-0.02em}
+.login-card .sub{font-size:13px;color:#86868b;text-align:center;margin-bottom:24px}
+.login-card label{display:block;margin-top:12px;font-size:12px;color:#86868b;font-weight:500;letter-spacing:-0.01em}
+.login-card input{width:100%;padding:12px 14px;margin-top:4px;border:1.5px solid #e5e5ea;border-radius:10px;background:#f9f9fb;color:#1d1d1f;font-size:15px;font-family:inherit;transition:border-color 0.2s,box-shadow 0.2s}
+.login-card input:focus{outline:none;border-color:#0071e3;box-shadow:0 0 0 3px rgba(0,113,227,0.15);background:#fff}
+.login-card button{width:100%;padding:12px;margin-top:20px;border:none;border-radius:12px;background:#0071e3;color:#fff;font-size:15px;font-weight:600;cursor:pointer;letter-spacing:-0.01em;transition:opacity 0.2s,transform 0.1s}
+.login-card button:hover{opacity:0.88}
+.login-card button:active{transform:scale(0.97)}
+.login-card button:disabled{opacity:0.5;cursor:not-allowed}
+.msg{margin-top:12px;font-size:13px;text-align:center;color:#ff3b30;font-weight:500}
+.msg.success{color:#34c759}
+.msg.warn{color:#ff9500}
+.pw-toggle{position:relative}
+.pw-toggle input{padding-right:44px}
+.pw-toggle .eye{position:absolute;right:12px;top:50%;transform:translateY(0%);cursor:pointer;font-size:18px;user-select:none;opacity:0.5;transition:opacity 0.2s}
+.pw-toggle .eye:hover{opacity:1}
+.subtext{text-align:center;margin-top:20px;font-size:11px;color:#aeaeb2}
+</style></head>
+<body>
+<div class="login-card">
+<h1>🔒 Home Alarm</h1>
+<div class="sub">Sign in to access the dashboard</div>
+<label>Username</label>
+<input type="text" id="user" value="admin" readonly style="opacity:0.6">
+<label>Password</label>
+<div class="pw-toggle">
+<input type="password" id="pass" placeholder="Enter password" autofocus>
+<span class="eye" onclick="togglePw()">👁</span>
+</div>
+<button id="loginBtn" onclick="doLogin()">Sign In</button>
+<div id="msg" class="msg"></div>
+<div class="subtext">Default: admin / admin</div>
+</div>
+<script>
+function togglePw(){
+  let e=document.getElementById('pass');
+  e.type=e.type==='password'?'text':'password';
+}
+async function doLogin(){
+  let btn=document.getElementById('loginBtn');
+  let msg=document.getElementById('msg');
+  btn.disabled=true;
+  btn.textContent='Signing in...';
+  msg.textContent='';
+  try{
+    let r=await fetch('/api/login',{
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:'user='+encodeURIComponent(document.getElementById('user').value)+
+           '&pass='+encodeURIComponent(document.getElementById('pass').value)
+    });
+    let d=await r.json();
+    if(d.ok){
+      msg.className='msg success';
+      msg.textContent='Logged in. Redirecting...';
+      setTimeout(()=>window.location.href='/',500);
+    } else if(d.error==='locked'){
+      msg.className='msg warn';
+      msg.textContent='Too many failed attempts. Try again in '+d.retry_after_sec+' seconds.';
+      btn.disabled=false;
+      btn.textContent='Sign In';
+    } else {
+      msg.className='msg';
+      msg.textContent=d.message||'Wrong password.';
+      btn.disabled=false;
+      btn.textContent='Sign In';
+      document.getElementById('pass').value='';
+      document.getElementById('pass').focus();
+    }
+  }catch(e){
+    msg.className='msg';
+    msg.textContent='Connection error. Is the device reachable?';
+    btn.disabled=false;
+    btn.textContent='Sign In';
+  }
+}
+document.getElementById('pass').addEventListener('keydown',function(e){
+  if(e.key==='Enter') doLogin();
+});
+</script>
+</body></html>)rawliteral";
+
+// ─── Auth API handlers ────────────────────────────────────────────────────
+
+static void apiLogin(AsyncWebServerRequest *req) {
+  String user = req->arg("user");
+  String pass = req->arg("pass");
+
+  if (user.length() == 0 || pass.length() == 0) {
+    req->send(400, "application/json", "{\"error\":\"missing_fields\",\"message\":\"Username and password required\"}");
+    return;
+  }
+
+  // Rate limit check
+  String ip = getClientIP(req);
+  int retryAfter = checkRateLimit(ip);
+  if (retryAfter > 0) {
+    String resp;
+    resp.reserve(64);
+    resp = "{\"error\":\"locked\",\"retry_after_sec\":" + String(retryAfter) + ",\"message\":\"Too many failed attempts. Try again later.\"}";
+    req->send(429, "application/json", resp);
+    return;
+  }
+
+  // Verify credentials
+  if (verifyPassword(pass.c_str(), config.adminPasswordHash)) {
+    resetFailedAttempts(ip);
+    String session = createSession();
+
+    String setCookie = String(SESSION_COOKIE_NAME) + "=" + session +
+                       "; Path=/; HttpOnly; SameSite=Lax; Max-Age=" + String(SESSION_TIMEOUT_SEC);
+    AsyncWebServerResponse *resp = req->beginResponse(200, "application/json", "{\"ok\":true}");
+    resp->addHeader("Set-Cookie", setCookie);
+    req->send(resp);
+
+    char logBuf[80];
+    snprintf(logBuf, sizeof(logBuf), "Login from %s", ip.c_str());
+    logSystem(logBuf);
+  } else {
+    recordFailedAttempt(ip);
+
+    char logBuf[80];
+    snprintf(logBuf, sizeof(logBuf), "Failed login from %s", ip.c_str());
+    logSystem(logBuf);
+
+    req->send(401, "application/json", "{\"error\":\"wrong_password\",\"message\":\"Invalid password\"}");
+  }
+}
+
+static void apiLogout(AsyncWebServerRequest *req) {
+  String token;
+  if (req->hasHeader("Cookie")) {
+    String cookie = req->getHeader("Cookie")->value();
+    String search = String(SESSION_COOKIE_NAME) + "=";
+    int start = cookie.indexOf(search);
+    if (start >= 0) {
+      start += search.length();
+      int end = cookie.indexOf(';', start);
+      if (end < 0) end = cookie.length();
+      token = cookie.substring(start, end);
+    }
+  }
+  if (token.length() > 0) {
+    destroySession(token.c_str());
+  }
+
+  // Clear cookie
+  String clearCookie = String(SESSION_COOKIE_NAME) + "=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0";
+  AsyncWebServerResponse *resp = req->beginResponse(200, "application/json", "{\"ok\":true}");
+  resp->addHeader("Set-Cookie", clearCookie);
+  req->send(resp);
+  logSystem("Logout");
+}
+
+static void apiAuthStatus(AsyncWebServerRequest *req) {
+  JsonDocument doc;
+  bool authenticated = false;
+
+  String token;
+  if (req->hasHeader("Cookie")) {
+    String cookie = req->getHeader("Cookie")->value();
+    String search = String(SESSION_COOKIE_NAME) + "=";
+    int start = cookie.indexOf(search);
+    if (start >= 0) {
+      start += search.length();
+      int end = cookie.indexOf(';', start);
+      if (end < 0) end = cookie.length();
+      token = cookie.substring(start, end);
+    }
+  }
+
+  if (token.length() > 0 && validateSession(token.c_str())) {
+    authenticated = true;
+    touchSession(token.c_str());
+  }
+
+  doc["authenticated"]       = authenticated;
+  doc["forcePasswordChange"] = config.forcePasswordChange;
+
+  String buf;
+  serializeJson(doc, buf);
+  req->send(200, "application/json", buf);
+}
+
+static void apiChangePassword(AsyncWebServerRequest *req) {
+  String current = req->arg("current");
+  String newPass = req->arg("new");
+
+  if (current.length() == 0 || newPass.length() == 0) {
+    req->send(400, "application/json", "{\"error\":\"missing_fields\",\"message\":\"Current and new password required\"}");
+    return;
+  }
+
+  if (newPass.length() < 4) {
+    req->send(400, "application/json", "{\"error\":\"password_too_short\",\"message\":\"Password must be at least 4 characters\"}");
+    return;
+  }
+
+  if (newPass.length() > 32) {
+    req->send(400, "application/json", "{\"error\":\"password_too_long\",\"message\":\"Password must be at most 32 characters\"}");
+    return;
+  }
+
+  // Verify current password
+  if (!verifyPassword(current.c_str(), config.adminPasswordHash)) {
+    req->send(401, "application/json", "{\"error\":\"wrong_password\",\"message\":\"Current password is incorrect\"}");
+    return;
+  }
+
+  // Update password
+  String newHash = hashPassword(newPass.c_str());
+  strlcpy(config.adminPasswordHash, newHash.c_str(), sizeof(config.adminPasswordHash));
+  config.forcePasswordChange = false;
+  saveConfig();
+
+  logSystem("Admin password changed");
+  req->send(200, "application/json", "{\"ok\":true,\"message\":\"Password changed successfully\"}");
+}
+
 // ─── External sensors config API ───────────────────────────────────────────
 
 static void apiExtSensorsConfig(AsyncWebServerRequest *req) {
@@ -1348,41 +1673,112 @@ static void handleOTAUpload(AsyncWebServerRequest *req, String filename, size_t 
 }
 
 void initWebServer() {
+  // ─── Public endpoints (no auth required) ──────────────────────────────
+  server.on("/login.html", HTTP_GET, [](AsyncWebServerRequest *req) {
+    req->send_P(200, "text/html", LOGIN_HTML);
+  });
+
+  server.on("/api/login", HTTP_POST, apiLogin);
+  server.on("/api/auth-status", HTTP_GET, apiAuthStatus);
+  server.on("/api/logout", HTTP_POST, apiLogout);
+  server.on("/api/change-password", HTTP_POST, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
+    apiChangePassword(req);
+  });
+
+  // ─── Protected endpoints (auth required) ──────────────────────────────
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
     req->send_P(200, "text/html", HTML);
   });
 
   server.on("/api/ota", HTTP_POST,
-    [](AsyncWebServerRequest *req) { /* response sent by upload handler */ },
+    [](AsyncWebServerRequest *req) {
+      if (!requireAuth(req)) return;
+    },
     handleOTAUpload);
 
-  server.on("/api/extsensors", HTTP_GET, apiExtSensorsConfig);
-  server.on("/api/extsensors", HTTP_POST, apiExtSensorsConfig);
-  server.on("/api/alarmmodes", HTTP_GET, apiAlarmModesConfig);
-  server.on("/api/alarmmodes", HTTP_POST, apiAlarmModesConfig);
-  server.on("/api/zones", HTTP_GET, apiZonesConfig);
-  server.on("/api/zones", HTTP_POST, apiZonesConfig);
-  server.on("/api/status", HTTP_GET, apiStatus);
-  server.on("/api/sensors", HTTP_GET, apiSensorsConfig);
-  server.on("/api/sensors", HTTP_POST, apiSensorsConfig);
-  server.on("/api/network", HTTP_GET, apiNetworkConfig);
-  server.on("/api/network", HTTP_POST, apiNetworkConfig);
-  server.on("/api/mode/set", HTTP_GET, apiModeSet);
-  server.on("/api/restart", HTTP_GET, apiRestart);
-  server.on("/api/reconnect", HTTP_GET, apiReconnect);
+  server.on("/api/extsensors", HTTP_GET, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
+    apiExtSensorsConfig(req);
+  });
+  server.on("/api/extsensors", HTTP_POST, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
+    apiExtSensorsConfig(req);
+  });
+  server.on("/api/alarmmodes", HTTP_GET, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
+    apiAlarmModesConfig(req);
+  });
+  server.on("/api/alarmmodes", HTTP_POST, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
+    apiAlarmModesConfig(req);
+  });
+  server.on("/api/zones", HTTP_GET, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
+    apiZonesConfig(req);
+  });
+  server.on("/api/zones", HTTP_POST, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
+    apiZonesConfig(req);
+  });
+  server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
+    apiStatus(req);
+  });
+  server.on("/api/sensors", HTTP_GET, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
+    apiSensorsConfig(req);
+  });
+  server.on("/api/sensors", HTTP_POST, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
+    apiSensorsConfig(req);
+  });
+  server.on("/api/network", HTTP_GET, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
+    apiNetworkConfig(req);
+  });
+  server.on("/api/network", HTTP_POST, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
+    apiNetworkConfig(req);
+  });
+  server.on("/api/mode/set", HTTP_GET, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
+    apiModeSet(req);
+  });
+  server.on("/api/restart", HTTP_GET, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
+    apiRestart(req);
+  });
+  server.on("/api/reconnect", HTTP_GET, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
+    apiReconnect(req);
+  });
 
   server.on("/api/eventlog", HTTP_GET, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
     req->send(200, "application/json", getEventLogJson());
   });
 
   server.on("/api/eventlog/clear", HTTP_POST, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
     clearEventLog();
     logSystem("Event log cleared");
     req->send(200, "application/json", "{\"ok\":true}");
   });
 
+  // Reset auth entirely (recovery endpoint — no auth required)
+  server.on("/api/reset-auth", HTTP_POST, [](AsyncWebServerRequest *req) {
+    String freshHash = hashPassword("admin");
+    strlcpy(config.adminPasswordHash, freshHash.c_str(), sizeof(config.adminPasswordHash));
+    config.forcePasswordChange = true;
+    saveConfig();
+    req->send(200, "application/json", "{\"ok\":true,\"msg\":\"Auth reset — password is now admin/admin\"}");
+  });
+
   // Temporary: force siren zoneId to 0
   server.on("/api/fix-siren", HTTP_POST, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
     config.relays[0].zoneId = 0;
     saveConfig();
     req->send(200, "application/json", "{\"ok\":true,\"msg\":\"Siren zoneId set to 0\"}");
@@ -1390,16 +1786,29 @@ void initWebServer() {
 
   for (int z = 1; z <= MAX_ZONES; z++) {
     String base = "/api/zone/" + String(z);
-    server.on((base + "/arm").c_str(),    HTTP_GET, apiZoneCommand);
-    server.on((base + "/disarm").c_str(), HTTP_GET, apiZoneCommand);
-    server.on((base + "/toggle").c_str(), HTTP_GET, apiZoneCommand);
+    server.on((base + "/arm").c_str(),    HTTP_GET, [](AsyncWebServerRequest *req) {
+      if (!requireAuth(req)) return;
+      apiZoneCommand(req);
+    });
+    server.on((base + "/disarm").c_str(), HTTP_GET, [](AsyncWebServerRequest *req) {
+      if (!requireAuth(req)) return;
+      apiZoneCommand(req);
+    });
+    server.on((base + "/toggle").c_str(), HTTP_GET, [](AsyncWebServerRequest *req) {
+      if (!requireAuth(req)) return;
+      apiZoneCommand(req);
+    });
   }
 
   for (int r = 1; r <= MAX_RELAYS; r++) {
-    server.on(("/api/relay/" + String(r)).c_str(), HTTP_GET, apiRelayCommand);
+    server.on(("/api/relay/" + String(r)).c_str(), HTTP_GET, [](AsyncWebServerRequest *req) {
+      if (!requireAuth(req)) return;
+      apiRelayCommand(req);
+    });
   }
 
   server.on("/api/relays/config", HTTP_POST, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
     for (int i = 0; i < MAX_RELAYS; i++) {
       String prefix = "r" + String(i + 1);
       String keyName = prefix + "_name";

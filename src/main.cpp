@@ -11,6 +11,7 @@
 #include "ha_discovery.h"
 #include "web.h"
 #include "event_log.h"
+#include "auth.h"
 #include <LittleFS.h>
 
 // ─── Sensor poll interval ──────────────────────────────────────────────────
@@ -64,6 +65,9 @@ void setup() {
   mqttApplyServerConfig();
   mqtt.setCallback(mqttCallback);
   mqtt.setBufferSize(2048);
+
+  Serial.println("[BOT] Init auth...");
+  initAuth();
 
   Serial.println("[BOT] Init web server...");
   initWebServer();
