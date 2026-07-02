@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
+#include "config.h"
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 #define MAX_FAILED_ATTEMPTS      5
@@ -15,10 +16,12 @@
 
 // ─── Session structure ──────────────────────────────────────────────────────
 struct AuthSession {
-    char    id[SESSION_ID_LENGTH + 1];   // hex token
-    uint32_t createdAt;                  // unix timestamp when created
-    uint32_t lastActivity;               // unix timestamp of last request
-    bool    active;
+    char     id[SESSION_ID_LENGTH + 1];   // hex token
+    char     username[16];                // logged-in username
+    uint8_t  role;                        // 0=admin, 1=operator
+    uint32_t createdAt;                   // unix timestamp when created
+    uint32_t lastActivity;                // unix timestamp of last request
+    bool     active;
 };
 
 // ─── IP rate-limit tracking ─────────────────────────────────────────────────
@@ -32,12 +35,21 @@ struct IpTracker {
 // ─── API ────────────────────────────────────────────────────────────────────
 void     initAuth();
 bool     requireAuth(AsyncWebServerRequest *req);
+bool     requireAdmin(AsyncWebServerRequest *req);
 
 String   hashPassword(const char *password);
 bool     verifyPassword(const char *password, const char *hash);
 
-String   createSession();
+// Multi-user auth
+UserEntry* verifyCredentials(const char *username, const char *password);
+UserEntry* verifyUserByPin(const char *pin);
+int       findUserSlot(const char *username);
+int       countActiveUsers();
+bool      hasActiveAdmin();
+
+String   createSession(const char *username, uint8_t role);
 bool     validateSession(const char *token);
+uint8_t  getSessionRole(const char *token);
 void     destroySession(const char *token);
 void     touchSession(const char *token);
 void     purgeExpiredSessions();

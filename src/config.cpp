@@ -123,9 +123,19 @@ void setDefaults() {
   config.haDiscoveryEnabled = true;
   strlcpy(config.haDiscoveryPrefix, "homeassistant", sizeof(config.haDiscoveryPrefix));
 
-  // ─── Default auth settings ─────────────────────────────────────────────
+  // ─── Default user account ────────────────────────────────────────────
+  memset(config.users, 0, sizeof(config.users));
   String defaultHash = hashPassword("admin");
-  strlcpy(config.adminPasswordHash, defaultHash.c_str(), sizeof(config.adminPasswordHash));
+  strlcpy(config.users[0].username, "admin", sizeof(config.users[0].username));
+  strlcpy(config.users[0].passwordHash, defaultHash.c_str(), sizeof(config.users[0].passwordHash));
+  strlcpy(config.users[0].pin, "0000", sizeof(config.users[0].pin));
+  config.users[0].role   = USER_ROLE_ADMIN;
+  config.users[0].active = true;
+  config.userCount = 1;
+  config.authMigrated = EEPROM_AUTH_MIGRATED_FLAG;
+
+  // Clear legacy fields
+  memset(config.adminPasswordHash, 0, sizeof(config.adminPasswordHash));
   config.forcePasswordChange = true;
 }
 
@@ -284,30 +294,46 @@ void loadConfig() {
     saveConfig();
   }
 
-  // ─── Migrate: Auth settings (added later) ────────────────────────────
-  // Check if adminPasswordHash is empty (old EEPROM without auth fields)
-  if (config.adminPasswordHash[0] == '\0') {
-    String defaultHash = hashPassword("admin");
-    strlcpy(config.adminPasswordHash, defaultHash.c_str(), sizeof(config.adminPasswordHash));
+  // ─── Migrate: Auth from single-user to multi-user system ─────────────
+  if (config.authMigrated != EEPROM_AUTH_MIGRATED_FLAG) {
+    // Migrate old admin password to new users array
+    memset(config.users, 0, sizeof(config.users));
+
+    if (config.adminPasswordHash[0] != '\0' && strlen(config.adminPasswordHash) == 64) {
+      // Old single-user system had a password hash — migrate it to users[0]
+      strlcpy(config.users[0].username, "admin", sizeof(config.users[0].username));
+      strlcpy(config.users[0].passwordHash, config.adminPasswordHash, sizeof(config.users[0].passwordHash));
+    } else {
+      // No valid old hash — create fresh defaults
+      String defaultHash = hashPassword("admin");
+      strlcpy(config.users[0].username, "admin", sizeof(config.users[0].username));
+      strlcpy(config.users[0].passwordHash, defaultHash.c_str(), sizeof(config.users[0].passwordHash));
+    }
+
+    strlcpy(config.users[0].pin, "0000", sizeof(config.users[0].pin));
+    config.users[0].role   = USER_ROLE_ADMIN;
+    config.users[0].active = true;
+    config.userCount = 1;
+    config.authMigrated = EEPROM_AUTH_MIGRATED_FLAG;
+
+    // Clear legacy fields
+    memset(config.adminPasswordHash, 0, sizeof(config.adminPasswordHash));
     config.forcePasswordChange = true;
     saveConfig();
-    Serial.println("[BOT] Auth: initialized default admin password");
-  } else {
-    // Validate hash contains only valid hex chars
-    bool hashValid = true;
-    for (size_t i = 0; i < strlen(config.adminPasswordHash); i++) {
-      char c = config.adminPasswordHash[i];
-      if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
-        hashValid = false;
-        break;
-      }
-    }
-    if (!hashValid || strlen(config.adminPasswordHash) != 64) {
-      String defaultHash = hashPassword("admin");
-      strlcpy(config.adminPasswordHash, defaultHash.c_str(), sizeof(config.adminPasswordHash));
-      config.forcePasswordChange = true;
+    Serial.println("[BOT] Auth: migrated to multi-user system");
+  }
+
+  // ─── Self-heal: if user[0] hash doesn't match current binary
+  //     and user hasn't changed password yet (legacy flag or pin=0000+hash=stale),
+  //     recompute with current SHA-256 code. Only self-heals the first admin.
+  {
+    String currentAdminHash = hashPassword("admin");
+    if (config.users[0].active &&
+        strcmp(config.users[0].passwordHash, currentAdminHash.c_str()) != 0 &&
+        config.forcePasswordChange) {
+      strlcpy(config.users[0].passwordHash, currentAdminHash.c_str(), sizeof(config.users[0].passwordHash));
       saveConfig();
-      Serial.println("[BOT] Auth: reset corrupted password hash to default");
+      Serial.println("[BOT] Auth: self-healed admin password hash after firmware update");
     }
   }
 
@@ -317,17 +343,25 @@ void loadConfig() {
     saveConfig();
   }
 
-  // ─── Self-heal: if hash doesn't match current binary's hash("admin")
-  //     but forcePasswordChange is true (meaning user hasn't set their own
-  //     password yet), recompute the hash with the current SHA-256 code.
-  //     This prevents "admin/admin" from breaking after OTA updates.
-  {
-    String currentAdminHash = hashPassword("admin");
-    if (strcmp(config.adminPasswordHash, currentAdminHash.c_str()) != 0 && config.forcePasswordChange) {
-      strlcpy(config.adminPasswordHash, currentAdminHash.c_str(), sizeof(config.adminPasswordHash));
-      saveConfig();
-      Serial.println("[BOT] Auth: self-healed admin password hash after firmware update");
+  // Sanitize user array: ensure at least one active admin
+  bool hasAdmin = false;
+  for (int i = 0; i < MAX_USERS; i++) {
+    if (config.users[i].active && config.users[i].role == USER_ROLE_ADMIN) {
+      hasAdmin = true;
+      break;
     }
+  }
+  if (!hasAdmin && config.userCount == 0) {
+    // Accidentally no users — recreate default admin
+    String defaultHash = hashPassword("admin");
+    strlcpy(config.users[0].username, "admin", sizeof(config.users[0].username));
+    strlcpy(config.users[0].passwordHash, defaultHash.c_str(), sizeof(config.users[0].passwordHash));
+    strlcpy(config.users[0].pin, "0000", sizeof(config.users[0].pin));
+    config.users[0].role   = USER_ROLE_ADMIN;
+    config.users[0].active = true;
+    config.userCount = 1;
+    config.forcePasswordChange = true;
+    saveConfig();
   }
 
   // ─── Migrate: HA discovery settings ───────────────────────────────────

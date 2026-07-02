@@ -261,9 +261,14 @@ struct Config {
   bool haDiscoveryEnabled;
   char haDiscoveryPrefix[40];
 
-  // ─── Authentication ──────────────────────────────────────────────────
-  char adminPasswordHash[65];   // SHA-256 hex string (64 chars + null)
-  bool forcePasswordChange;     // true until admin changes default password
+  // ─── User accounts ───────────────────────────────────────────────────
+  uint8_t    authMigrated;          // EEPROM_AUTH_MIGRATED_FLAG when users[] is primary
+  UserEntry  users[MAX_USERS];      // user accounts (replaces adminPasswordHash)
+  uint8_t    userCount;            // number of active users
+
+  // ── Legacy fields (kept in struct for EEPROM compatibility, unused in code) ──
+  char adminPasswordHash[65];       // DEPRECATED — migrated to users[]
+  bool forcePasswordChange;         // DEPRECATED — migrated to users[]
 };
 
 // ─── Globals ───────────────────────────────────────────────────────────────

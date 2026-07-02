@@ -524,6 +524,7 @@ small{color:#86868b;font-size:12px}
 <button onclick="showTab('alarmmodes')" id="tab-alarmmodes">Alarm Modes</button>
 <button onclick="showTab('config')" id="tab-config">Config</button>
 <button onclick="showTab('eventlog')" id="tab-eventlog">Event Log</button>
+<button onclick="showTab('users')" id="tab-users" style="display:none">Users</button>
 </nav>
 <div id="page-dashboard" class="page active"><h1>Home Alarm System</h1>
 <div id="sysInfo" style="font-size:13px;color:#86868b;margin-bottom:12px">Loading...</div>
@@ -600,6 +601,20 @@ small{color:#86868b;font-size:12px}
 <div class="card" id="eventLogContainer" style="padding:0;overflow:hidden">Loading...</div>
 <div class="log-footer" id="logFooter"></div>
 </div>
+<div id="page-users" class="page"><h1>User Management</h1>
+<div style="font-size:11px;color:#86868b;margin-bottom:16px">Manage users who can access the system.</div>
+<div class="card"><h2>Add User</h2>
+<div class="form-row"><div><label>Username</label><input id="uUser" placeholder="Username (min 2 chars)"></div>
+<div><label>Password</label><input id="uPass" type="password" placeholder="At least 4 characters"></div></div>
+<div class="form-row"><div><label>Role</label><select id="uRole"><option value="0">Admin (full access)</option><option value="1">Operator (arm/disarm only)</option></select></div>
+<div><label>PIN (4 digits for keypad)</label><input id="uPin" type="text" placeholder="0000" maxlength="4" pattern="[0-9]{4}"></div></div>
+<button class="btn btn-save" onclick="addUser()">Add User</button>
+<span id="uMsg" style="font-size:13px;margin-left:12px"></span>
+</div>
+<div class="card"><h2>Current Users</h2>
+<div id="userTable">Loading...</div>
+</div>
+</div>
 <div class="modal-overlay" id="pwModal">
 <div class="modal-card">
 <h2>🔐 Change Password</h2>
@@ -641,6 +656,7 @@ function rangeBar(raw, lo, hi, cls){
 
 let _authChecked = false;
 
+let _authRole = 1;
 async function checkAuth(){
   try{
     const r=await fetch('/api/auth-status');
@@ -649,6 +665,9 @@ async function checkAuth(){
       window.location.href='/login.html';
       return false;
     }
+    _authRole = (d.role !== undefined) ? d.role : 1;
+    // Show Users tab for admins only
+    document.getElementById('tab-users').style.display = (_authRole===0)?'':'none';
     if(d.forcePasswordChange){
       document.getElementById('pwModal').classList.add('show');
       document.getElementById('pwCurrent').focus();
@@ -656,6 +675,50 @@ async function checkAuth(){
     }
   }catch(e){}
   return true;
+}
+
+async function loadUsers(){
+  try{
+    const r=await fetch('/api/users');
+    const users=await r.json();
+    let h='<table style="width:100%;border-collapse:collapse">';
+    h+='<tr><th style="text-align:left;padding:8px 12px;font-size:12px;color:#86868b;font-weight:600">Username</th><th style="text-align:left;padding:8px 12px;font-size:12px;color:#86868b;font-weight:600">Role</th><th style="text-align:left;padding:8px 12px;font-size:12px;color:#86868b;font-weight:600">PIN</th><th style="text-align:right;padding:8px 12px;font-size:12px;color:#86868b;font-weight:600">Actions</th></tr>';
+    users.forEach(u=>{
+      h+='<tr style="border-top:1px solid #f0f0f5"><td style="padding:10px 12px;font-size:14px;font-weight:500">'+u.username+'</td>';
+      h+='<td style="padding:10px 12px;font-size:13px;color:#86868b">'+(u.role==0?'Admin':'Operator')+'</td>';
+      h+='<td style="padding:10px 12px;font-size:13px;font-family:monospace;color:#86868b">'+u.pin+'</td>';
+      h+='<td style="text-align:right;padding:10px 12px"><button class="btn btn-danger" onclick="deleteUser('+u.id+',\''+u.username+'\')" style="font-size:11px;padding:4px 12px">Delete</button></td></tr>';
+    });
+    h+='</table>';
+    if(users.length===0) h='<div style="text-align:center;padding:20px;color:#aeaeb2">No users found.</div>';
+    document.getElementById('userTable').innerHTML=h;
+  }catch(e){}
+}
+
+async function addUser(){
+  let u=document.getElementById('uUser').value.trim();
+  let p=document.getElementById('uPass').value;
+  let r=document.getElementById('uRole').value;
+  let n=document.getElementById('uPin').value;
+  if(!u||!p||!n||n.length!==4){document.getElementById('uMsg').textContent='All fields required (PIN=4 digits).';return;}
+  let rsp=await fetch('/api/users/add',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:'username='+encodeURIComponent(u)+'&password='+encodeURIComponent(p)+'&role='+r+'&pin='+n});
+  let d=await rsp.json();
+  if(d.ok){
+    document.getElementById('uMsg').textContent='User added.';
+    document.getElementById('uUser').value='';document.getElementById('uPass').value='';
+    document.getElementById('uPin').value='';
+    loadUsers();
+  } else {
+    document.getElementById('uMsg').textContent=d.error||'Error.';
+  }
+}
+
+async function deleteUser(id,name){
+  if(!confirm('Delete user '+name+'?')) return;
+  let rsp=await fetch('/api/users/delete',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'id='+id});
+  let d=await rsp.json();
+  if(d.ok) loadUsers(); else alert(d.error||'Error');
 }
 
 async function changePassword(){
@@ -1248,6 +1311,7 @@ function showTab(t){
   if(t=='extsensors'){loadExtSensors();sensorRefreshTimer=setInterval(refreshExtLive,2000);}
   if(t=='eventlog'){loadEventLog();eventLogTimer=setInterval(loadEventLog,10000);}
   if(t=='alarmmodes')loadAlarmModes();
+  if(t=='users')loadUsers();
 }
 async function uploadFirmware(){
   const file=document.getElementById('otaFile').files[0];
@@ -1298,7 +1362,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Ne
 <h1>🔒 Home Alarm</h1>
 <div class="sub">Sign in to access the dashboard</div>
 <label>Username</label>
-<input type="text" id="user" value="admin" readonly style="opacity:0.6">
+<input type="text" id="user" placeholder="Username" value="admin" autofocus>
 <label>Password</label>
 <div class="pw-toggle">
 <input type="password" id="pass" placeholder="Enter password" autofocus>
@@ -1379,10 +1443,11 @@ static void apiLogin(AsyncWebServerRequest *req) {
     return;
   }
 
-  // Verify credentials
-  if (verifyPassword(pass.c_str(), config.adminPasswordHash)) {
+  // Verify credentials against users array
+  UserEntry* u = verifyCredentials(user.c_str(), pass.c_str());
+  if (u) {
     resetFailedAttempts(ip);
-    String session = createSession();
+    String session = createSession(u->username, u->role);
 
     String setCookie = String(SESSION_COOKIE_NAME) + "=" + session +
                        "; Path=/; HttpOnly; SameSite=Lax; Max-Age=" + String(SESSION_TIMEOUT_SEC);
@@ -1391,16 +1456,16 @@ static void apiLogin(AsyncWebServerRequest *req) {
     req->send(resp);
 
     char logBuf[80];
-    snprintf(logBuf, sizeof(logBuf), "Login from %s", ip.c_str());
+    snprintf(logBuf, sizeof(logBuf), "Login %s from %s", u->username, ip.c_str());
     logSystem(logBuf);
   } else {
     recordFailedAttempt(ip);
 
     char logBuf[80];
-    snprintf(logBuf, sizeof(logBuf), "Failed login from %s", ip.c_str());
+    snprintf(logBuf, sizeof(logBuf), "Failed login %s from %s", user.c_str(), ip.c_str());
     logSystem(logBuf);
 
-    req->send(401, "application/json", "{\"error\":\"wrong_password\",\"message\":\"Invalid password\"}");
+    req->send(401, "application/json", "{\"error\":\"wrong_password\",\"message\":\"Invalid username or password\"}");
   }
 }
 
@@ -1432,6 +1497,8 @@ static void apiLogout(AsyncWebServerRequest *req) {
 static void apiAuthStatus(AsyncWebServerRequest *req) {
   JsonDocument doc;
   bool authenticated = false;
+  uint8_t role = USER_ROLE_OPERATOR;
+  bool forcePwChange = false;
 
   String token;
   if (req->hasHeader("Cookie")) {
@@ -1448,11 +1515,22 @@ static void apiAuthStatus(AsyncWebServerRequest *req) {
 
   if (token.length() > 0 && validateSession(token.c_str())) {
     authenticated = true;
+    role = getSessionRole(token.c_str());
     touchSession(token.c_str());
+    // Check if the logged-in user's hash matches default "admin" hash
+    // This serves as the forcePasswordChange indicator
+    String defaultHash = hashPassword("admin");
+    for (int i = 0; i < MAX_USERS; i++) {
+      if (config.users[i].active && strcmp(config.users[i].passwordHash, defaultHash.c_str()) == 0) {
+        forcePwChange = true;
+        break;
+      }
+    }
   }
 
   doc["authenticated"]       = authenticated;
-  doc["forcePasswordChange"] = config.forcePasswordChange;
+  doc["role"]                = role;
+  doc["forcePasswordChange"] = forcePwChange;
 
   String buf;
   serializeJson(doc, buf);
@@ -1478,20 +1556,22 @@ static void apiChangePassword(AsyncWebServerRequest *req) {
     return;
   }
 
-  // Verify current password
-  if (!verifyPassword(current.c_str(), config.adminPasswordHash)) {
-    req->send(401, "application/json", "{\"error\":\"wrong_password\",\"message\":\"Current password is incorrect\"}");
-    return;
+  // Find the user whose password matches the current password
+  for (int i = 0; i < MAX_USERS; i++) {
+    if (!config.users[i].active) continue;
+    if (verifyPassword(current.c_str(), config.users[i].passwordHash)) {
+      // Found the user — update their password
+      String newHash = hashPassword(newPass.c_str());
+      strlcpy(config.users[i].passwordHash, newHash.c_str(), sizeof(config.users[i].passwordHash));
+      config.forcePasswordChange = false;
+      saveConfig();
+      logSystem("Password changed");
+      req->send(200, "application/json", "{\"ok\":true,\"message\":\"Password changed successfully\"}");
+      return;
+    }
   }
 
-  // Update password
-  String newHash = hashPassword(newPass.c_str());
-  strlcpy(config.adminPasswordHash, newHash.c_str(), sizeof(config.adminPasswordHash));
-  config.forcePasswordChange = false;
-  saveConfig();
-
-  logSystem("Admin password changed");
-  req->send(200, "application/json", "{\"ok\":true,\"message\":\"Password changed successfully\"}");
+  req->send(401, "application/json", "{\"error\":\"wrong_password\",\"message\":\"Current password is incorrect\"}");
 }
 
 // ─── External sensors config API ───────────────────────────────────────────
@@ -1767,10 +1847,113 @@ void initWebServer() {
     req->send(200, "application/json", "{\"ok\":true}");
   });
 
+  // ─── User management (admin only) ─────────────────────────────────────
+  server.on("/api/users", HTTP_GET, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
+    JsonDocument doc;
+    JsonArray arr = doc.to<JsonArray>();
+    for (int i = 0; i < MAX_USERS; i++) {
+      if (!config.users[i].active) continue;
+      JsonObject u = arr.add<JsonObject>();
+      u["id"]       = i;
+      u["username"] = config.users[i].username;
+      u["role"]     = config.users[i].role;
+      u["pin"]      = String(config.users[i].pin);
+    }
+    String buf;
+    serializeJson(doc, buf);
+    req->send(200, "application/json", buf);
+  });
+
+  server.on("/api/users/add", HTTP_POST, [](AsyncWebServerRequest *req) {
+    if (!requireAdmin(req)) return;
+    String username = req->arg("username");
+    String password = req->arg("password");
+    String pin      = req->arg("pin");
+    String roleStr  = req->arg("role");
+    if (username.length() < 2 || password.length() < 4 || pin.length() != 4) {
+      req->send(400, "application/json", "{\"error\":\"invalid_input\"}");
+      return;
+    }
+    // Check for duplicate username
+    for (int i = 0; i < MAX_USERS; i++) {
+      if (config.users[i].active && strcmp(config.users[i].username, username.c_str()) == 0) {
+        req->send(400, "application/json", "{\"error\":\"duplicate_username\"}");
+        return;
+      }
+    }
+    // Check for duplicate PIN
+    for (int i = 0; i < MAX_USERS; i++) {
+      if (config.users[i].active && strcmp(config.users[i].pin, pin.c_str()) == 0) {
+        req->send(400, "application/json", "{\"error\":\"duplicate_pin\"}");
+        return;
+      }
+    }
+    if (countActiveUsers() >= MAX_USERS) {
+      req->send(400, "application/json", "{\"error\":\"max_users\"}");
+      return;
+    }
+    // Find free slot
+    int slot = -1;
+    for (int i = 0; i < MAX_USERS; i++) {
+      if (!config.users[i].active) { slot = i; break; }
+    }
+    if (slot < 0) {
+      req->send(400, "application/json", "{\"error\":\"max_users\"}");
+      return;
+    }
+    String hash = hashPassword(password.c_str());
+    strlcpy(config.users[slot].username, username.c_str(), sizeof(config.users[slot].username));
+    strlcpy(config.users[slot].passwordHash, hash.c_str(), sizeof(config.users[slot].passwordHash));
+    strlcpy(config.users[slot].pin, pin.c_str(), sizeof(config.users[slot].pin));
+    config.users[slot].role   = (uint8_t)roleStr.toInt();
+    config.users[slot].active = true;
+    config.userCount++;
+    saveConfig();
+    char logBuf[80];
+    snprintf(logBuf, sizeof(logBuf), "User '%s' added", username.c_str());
+    logSystem(logBuf);
+    req->send(200, "application/json", "{\"ok\":true}");
+  });
+
+  server.on("/api/users/delete", HTTP_POST, [](AsyncWebServerRequest *req) {
+    if (!requireAdmin(req)) return;
+    int id = req->arg("id").toInt();
+    if (id < 0 || id >= MAX_USERS || !config.users[id].active) {
+      req->send(400, "application/json", "{\"error\":\"not_found\"}");
+      return;
+    }
+    // Cannot delete the last admin
+    if (config.users[id].role == USER_ROLE_ADMIN) {
+      int adminCount = 0;
+      for (int i = 0; i < MAX_USERS; i++) {
+        if (config.users[i].active && config.users[i].role == USER_ROLE_ADMIN) adminCount++;
+      }
+      if (adminCount <= 1) {
+        req->send(400, "application/json", "{\"error\":\"cannot_delete_last_admin\"}");
+        return;
+      }
+    }
+    char logBuf[80];
+    snprintf(logBuf, sizeof(logBuf), "User '%s' deleted", config.users[id].username);
+    logSystem(logBuf);
+    config.users[id].active = false;
+    config.userCount--;
+    saveConfig();
+    req->send(200, "application/json", "{\"ok\":true}");
+  });
+
   // Reset auth entirely (recovery endpoint — no auth required)
   server.on("/api/reset-auth", HTTP_POST, [](AsyncWebServerRequest *req) {
     String freshHash = hashPassword("admin");
-    strlcpy(config.adminPasswordHash, freshHash.c_str(), sizeof(config.adminPasswordHash));
+    memset(config.users, 0, sizeof(config.users));
+    strlcpy(config.users[0].username, "admin", sizeof(config.users[0].username));
+    strlcpy(config.users[0].passwordHash, freshHash.c_str(), sizeof(config.users[0].passwordHash));
+    strlcpy(config.users[0].pin, "0000", sizeof(config.users[0].pin));
+    config.users[0].role   = USER_ROLE_ADMIN;
+    config.users[0].active = true;
+    config.userCount = 1;
+    config.authMigrated = EEPROM_AUTH_MIGRATED_FLAG;
     config.forcePasswordChange = true;
     saveConfig();
     req->send(200, "application/json", "{\"ok\":true,\"msg\":\"Auth reset — password is now admin/admin\"}");

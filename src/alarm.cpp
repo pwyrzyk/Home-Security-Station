@@ -124,27 +124,65 @@ static void syncRelays() {
         break;
       case RELAY_FOLLOW_ZONE: {
         bool active = false;
+        bool anyAlarmZone = false;
         if (rc.zoneId == 0) {
           // Follow the zone that entered alarm earliest
           uint32_t oldestMs = UINT32_MAX;
           int bestZ = -1;
           for (int z = 0; z < MAX_ZONES; z++) {
-            if (config.zones[z].enabled && config.zones[z].sirenEnabled &&
-                zoneStates[z].alarmState == ZONE_ALARM && zoneStates[z].sirenOn) {
-              if (zoneStates[z].alarmEnteredMs < oldestMs) {
-                oldestMs = zoneStates[z].alarmEnteredMs;
-                bestZ = z;
+            if (config.zones[z].enabled && zoneStates[z].alarmState == ZONE_ALARM) {
+              anyAlarmZone = true;
+              if (config.zones[z].sirenEnabled && zoneStates[z].sirenOn) {
+                if (zoneStates[z].alarmEnteredMs < oldestMs) {
+                  oldestMs = zoneStates[z].alarmEnteredMs;
+                  bestZ = z;
+                }
               }
             }
           }
           if (bestZ >= 0) {
             active = zoneStates[bestZ].sirenOn;
           }
+          // Diagnostic log for siren relay
+          static bool sirenDiagLogged = false;
+          if (r == 0 && anyAlarmZone && !active && !sirenDiagLogged) {
+            char dbg[160];
+            char detail[128] = "";
+            for (int z = 0; z < MAX_ZONES; z++) {
+              if (config.zones[z].enabled && zoneStates[z].alarmState == ZONE_ALARM) {
+                char tmp[60];
+                snprintf(tmp, sizeof(tmp), " Z%d(SE=%d SO=%d) ",
+                         z+1, config.zones[z].sirenEnabled, zoneStates[z].sirenOn);
+                strlcat(detail, tmp, sizeof(detail));
+              }
+            }
+            snprintf(dbg, sizeof(dbg), "Siren OFF alarmActive=1 zones:%s", detail);
+            logRelay(dbg);
+            sirenDiagLogged = true;
+          }
+          if (r == 0 && active) {
+            sirenDiagLogged = false;
+          }
         } else if (rc.zoneId >= 1 && rc.zoneId <= MAX_ZONES) {
           uint8_t zidx = rc.zoneId - 1;
-          if (config.zones[zidx].sirenEnabled &&
-              zoneStates[zidx].alarmState == ZONE_ALARM) {
-            active = zoneStates[zidx].sirenOn;
+          if (config.zones[zidx].enabled && zoneStates[zidx].alarmState == ZONE_ALARM) {
+            anyAlarmZone = true;
+            if (config.zones[zidx].sirenEnabled) {
+              active = zoneStates[zidx].sirenOn;
+            }
+          }
+          // Diagnostic log for siren relay (specific zone mode)
+          static bool sirenDiagLogged2 = false;
+          if (r == 0 && anyAlarmZone && !active && !sirenDiagLogged2) {
+            uint8_t zidx = rc.zoneId - 1;
+            char dbg[80];
+            snprintf(dbg, sizeof(dbg), "Siren OFF Z%d(SE=%d SO=%d)",
+                     rc.zoneId, config.zones[zidx].sirenEnabled, zoneStates[zidx].sirenOn);
+            logRelay(dbg);
+            sirenDiagLogged2 = true;
+          }
+          if (r == 0 && active) {
+            sirenDiagLogged2 = false;
           }
         }
         setRelay(r, active);
