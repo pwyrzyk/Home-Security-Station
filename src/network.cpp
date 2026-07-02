@@ -10,6 +10,7 @@ static bool     wifiWasEverConnected = false;  // track if we ever had WiFi
 bool connectWiFiStation() {
   if (strlen(config.wifiSsid) == 0) return false;
 
+  WiFi.setHostname(OTA_HOSTNAME);
   WiFi.mode(WIFI_STA);
   WiFi.begin(config.wifiSsid, config.wifiPass);
 

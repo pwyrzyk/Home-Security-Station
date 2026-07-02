@@ -156,7 +156,16 @@ static void syncRelays() {
         static bool     sirenPulseOn[MAX_RELAYS]     = {false};
         static bool     sirenOneShotDone[MAX_RELAYS] = {false};
 
+        // Diagnostic: log when siren should fire on new alarm
+        static bool sirenNewAlarmLogged = false;
+        if (anyAlarm && !sirenNewAlarmLogged && !sirenOneShotDone[r]) {
+          char dbg[80];
+          snprintf(dbg, sizeof(dbg), "Siren start ON=%ds OFF=%ds", onSecs, offSecs);
+          logRelay(dbg);
+          sirenNewAlarmLogged = true;
+        }
         if (!anyAlarm) {
+          sirenNewAlarmLogged = false;
           sirenPulseOn[r] = false;
           sirenPhaseMs[r] = 0;
           sirenOneShotDone[r] = false;

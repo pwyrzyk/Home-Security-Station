@@ -864,9 +864,6 @@ function renderStatusBar(){
   let statusText = wifiOk?((state==='triggered'?'⚠️ Alarm Active':(state==='disarmed'?'✅ System Ready':'⏳ '+state))):'❌ WiFi Down';
   let h='<span class="stat-dot '+dotCls+'"></span>';
   h+='<strong>'+statusText+'</strong>';
-  h+='<span style="margin-left:auto">WiFi: '+d.rssi+' dBm</span>';
-  h+='<span>Up: '+fmDur(d.uptime)+'</span>';
-  h+='<span>Heap: '+(d.heapFree/1024).toFixed(0)+' KB</span>';
   document.getElementById('statusBar').innerHTML=h;
 }
 
@@ -882,7 +879,7 @@ function renderInfoCards(){
     {icon:'🚨', title:'Last Trigger', value:(lt.zoneName?('Z'+lt.zoneId+': '+lt.sensorName):'None'), sub:(lt.timeAgoSec?fmDur(lt.timeAgoSec)+' ago':'')},
     {icon:'📊', title:'Sensors', value:num+ss.idle+'</span> Idle<br>'+num+ss.active+'</span> Active<br>'+num+ss.fault+'</span> Fault', sub:''},
     {icon:'🔌', title:'Relays', value:rlbl+'Siren</span> '+r0+'<br>'+rlbl+'Alarm</span> '+r1+'<br>'+rlbl+'Tamper</span> '+r2+'<br>'+rlbl+'No-Pwr</span> '+r3, sub:''},
-    {icon:'🔧', title:'System', value:d.firmware, sub:d.device},
+    {icon:'🔧', title:'System', value:d.firmware+'<br><span style="font-size:12px;font-weight:400">Up: '+fmDur(d.uptime)+'<br>Heap: '+(d.heapFree/1024).toFixed(0)+' KB</span>', sub:d.device},
     {icon:'🌐', title:'Network', value:d.ssid||'WiFi', sub:'IP '+(d.localIP||'')+'<br>RSSI '+d.rssi+' dBm<br>http://alarm.local<br>MQTT '+(d.mqttConnected?'✅':'❌')+'  ·  HA '+(d.haEnabled?'✅':'❌')}
   ];
   let h='';
@@ -1495,26 +1492,27 @@ load();setInterval(load,3000);
 static const char LOGIN_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Login - Home Alarm</title><style>
+:root{--bg:#0d1117;--fg:#c9d1d9;--card:#161b22;--border:#30363d;--muted:#8b949e;--blue:#58a6ff;--green:#3fb950;--red:#f85149;--yellow:#d2991d}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;background:#f2f2f7;color:#1d1d1f;display:flex;align-items:center;justify-content:center;min-height:100vh;-webkit-font-smoothing:antialiased}
-.login-card{background:#fff;border-radius:20px;padding:40px 36px;width:100%;max-width:380px;box-shadow:0 4px 20px rgba(0,0,0,0.08),0 1px 3px rgba(0,0,0,0.04)}
-.login-card h1{font-size:28px;font-weight:700;text-align:center;margin-bottom:6px;letter-spacing:-0.02em}
-.login-card .sub{font-size:13px;color:#86868b;text-align:center;margin-bottom:24px}
-.login-card label{display:block;margin-top:12px;font-size:12px;color:#86868b;font-weight:500;letter-spacing:-0.01em}
-.login-card input{width:100%;padding:12px 14px;margin-top:4px;border:1.5px solid #e5e5ea;border-radius:10px;background:#f9f9fb;color:#1d1d1f;font-size:15px;font-family:inherit;transition:border-color 0.2s,box-shadow 0.2s}
-.login-card input:focus{outline:none;border-color:#0071e3;box-shadow:0 0 0 3px rgba(0,113,227,0.15);background:#fff}
-.login-card button{width:100%;padding:12px;margin-top:20px;border:none;border-radius:12px;background:#0071e3;color:#fff;font-size:15px;font-weight:600;cursor:pointer;letter-spacing:-0.01em;transition:opacity 0.2s,transform 0.1s}
+body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;background:var(--bg);color:var(--fg);display:flex;align-items:center;justify-content:center;min-height:100vh;-webkit-font-smoothing:antialiased}
+.login-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:40px 36px;width:100%;max-width:380px}
+.login-card h1{font-size:28px;font-weight:700;text-align:center;margin-bottom:6px;letter-spacing:-0.02em;color:var(--fg)}
+.login-card .sub{font-size:13px;color:var(--muted);text-align:center;margin-bottom:24px}
+.login-card label{display:block;margin-top:12px;font-size:12px;color:var(--muted);font-weight:500;letter-spacing:-0.01em}
+.login-card input{width:100%;padding:12px 14px;margin-top:4px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--fg);font-size:15px;font-family:inherit;transition:border-color 0.15s}
+.login-card input:focus{outline:none;border-color:var(--blue);background:var(--bg)}
+.login-card button{width:100%;padding:12px;margin-top:20px;border:none;border-radius:10px;background:var(--blue);color:#fff;font-size:15px;font-weight:600;cursor:pointer;letter-spacing:-0.01em;transition:opacity 0.2s,transform 0.1s}
 .login-card button:hover{opacity:0.88}
 .login-card button:active{transform:scale(0.97)}
 .login-card button:disabled{opacity:0.5;cursor:not-allowed}
-.msg{margin-top:12px;font-size:13px;text-align:center;color:#ff3b30;font-weight:500}
-.msg.success{color:#34c759}
-.msg.warn{color:#ff9500}
+.msg{margin-top:12px;font-size:13px;text-align:center;color:var(--red);font-weight:500}
+.msg.success{color:var(--green)}
+.msg.warn{color:var(--yellow)}
 .pw-toggle{position:relative}
 .pw-toggle input{padding-right:44px}
 .pw-toggle .eye{position:absolute;right:12px;top:50%;transform:translateY(0%);cursor:pointer;font-size:18px;user-select:none;opacity:0.5;transition:opacity 0.2s}
 .pw-toggle .eye:hover{opacity:1}
-.subtext{text-align:center;margin-top:20px;font-size:11px;color:#aeaeb2}
+.subtext{text-align:center;margin-top:20px;font-size:11px;color:var(--muted)}
 </style></head>
 <body>
 <div class="login-card">
