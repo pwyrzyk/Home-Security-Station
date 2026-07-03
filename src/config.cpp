@@ -124,15 +124,23 @@ void setDefaults() {
   config.haDiscoveryEnabled = true;
   strlcpy(config.haDiscoveryPrefix, "homeassistant", sizeof(config.haDiscoveryPrefix));
 
-  // ─── Default user account ────────────────────────────────────────────
+  // ─── Default user accounts ────────────────────────────────────────────
   memset(config.users, 0, sizeof(config.users));
   String defaultHash = hashPassword("admin");
+  String apiHash = hashPassword("api_user");
+  // Admin account
   strlcpy(config.users[0].username, "admin", sizeof(config.users[0].username));
   strlcpy(config.users[0].passwordHash, defaultHash.c_str(), sizeof(config.users[0].passwordHash));
   strlcpy(config.users[0].pin, "0000", sizeof(config.users[0].pin));
   config.users[0].role   = USER_ROLE_ADMIN;
   config.users[0].active = true;
-  config.userCount = 1;
+  // API user account
+  strlcpy(config.users[1].username, "api_user", sizeof(config.users[1].username));
+  strlcpy(config.users[1].passwordHash, apiHash.c_str(), sizeof(config.users[1].passwordHash));
+  strlcpy(config.users[1].pin, "0001", sizeof(config.users[1].pin));
+  config.users[1].role   = USER_ROLE_API;
+  config.users[1].active = true;
+  config.userCount = 2;
   config.authMigrated = EEPROM_AUTH_MIGRATED_FLAG;
 
   // Clear legacy fields
@@ -401,6 +409,34 @@ void loadConfig() {
   if (config.forcePasswordChange != 0 && config.forcePasswordChange != 1) {
     config.forcePasswordChange = true;
     saveConfig();
+  }
+
+  // ─── Migrate: ensure api_user account exists (added in firmware 1.0.1) ──
+  {
+    bool hasApiUser = false;
+    for (int i = 0; i < MAX_USERS; i++) {
+      if (config.users[i].active && strcmp(config.users[i].username, "api_user") == 0) {
+        hasApiUser = true;
+        break;
+      }
+    }
+    if (!hasApiUser && countActiveUsers() < MAX_USERS) {
+      int slot = -1;
+      for (int i = 0; i < MAX_USERS; i++) {
+        if (!config.users[i].active) { slot = i; break; }
+      }
+      if (slot >= 0) {
+        String apiHash = hashPassword("api_user");
+        strlcpy(config.users[slot].username, "api_user", sizeof(config.users[slot].username));
+        strlcpy(config.users[slot].passwordHash, apiHash.c_str(), sizeof(config.users[slot].passwordHash));
+        strlcpy(config.users[slot].pin, "0001", sizeof(config.users[slot].pin));
+        config.users[slot].role   = USER_ROLE_API;
+        config.users[slot].active = true;
+        config.userCount++;
+        saveConfig();
+        Serial.println("[BOT] Auth: migrated — added api_user account");
+      }
+    }
   }
 
   // Sanitize user array: ensure at least one active admin

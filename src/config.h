@@ -80,7 +80,8 @@
 // ─── User roles ──────────────────────────────────────────────────────────────
 enum UserRole : uint8_t {
   USER_ROLE_ADMIN     = 0,
-  USER_ROLE_OPERATOR  = 1
+  USER_ROLE_OPERATOR  = 1,
+  USER_ROLE_API       = 2
 };
 
 // ─── Keypad PIN mode suffixes ──────────────────────────────────────────────

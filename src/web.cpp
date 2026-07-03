@@ -168,7 +168,6 @@ static void apiSensorsConfig(AsyncWebServerRequest *req) {
       s["standbyMin"] = config.sensors[i].standbyMin;
       s["standbyMax"] = config.sensors[i].standbyMax;
       s["detectMin"]  = config.sensors[i].detectMin;
-      s["detectMax"]  = config.sensors[i].detectMax;
       s["faultMin"]   = config.sensors[i].faultMin;
       s["faultMax"]   = config.sensors[i].faultMax;
       s["invert"]     = config.sensors[i].invert;
@@ -673,7 +672,7 @@ small{color:var(--muted);font-size:12px}
 <div class="card"><h2>Add User</h2>
 <div class="form-row"><div><label>Username</label><input id="uUser" placeholder="Username (min 2 chars)"></div>
 <div><label>Password</label><input id="uPass" type="password" placeholder="At least 4 characters"></div></div>
-<div class="form-row"><div><label>Role</label><select id="uRole"><option value="0">Admin (full access)</option><option value="1">Operator (arm/disarm only)</option></select></div>
+<div class="form-row"><div><label>Role</label><select id="uRole"><option value="0">Admin (full access)</option><option value="1">Operator (arm/disarm only)</option><option value="2">API (sensor trigger only)</option></select></div>
 <div><label>PIN (4 digits for keypad)</label><input id="uPin" type="text" placeholder="0000" maxlength="4" pattern="[0-9]{4}"></div></div>
 <button class="btn btn-save" onclick="addUser()">Add User</button>
 <span id="uMsg" style="font-size:13px;margin-left:12px"></span>
@@ -744,6 +743,12 @@ async function checkAuth(){
     document.getElementById('tab-config').style.display = isAdmin ? '' : 'none';
     document.getElementById('tab-eventlog').style.display = isAdmin ? '' : 'none';
     document.getElementById('tab-users').style.display = isAdmin ? '' : 'none';
+    // API users get no tabs — dashboard is hidden, redirect
+    if(_authRole===2){
+      document.getElementById('tab-dashboard').style.display = 'none';
+      document.getElementById('page-dashboard').innerHTML='<div style="padding:40px;text-align:center;color:var(--muted)"><div style="font-size:48px;margin-bottom:16px">🔌</div><h2>API Only Account</h2><p style="margin:8px 0">This account can only trigger external sensors via REST API.</p><p style="font-size:13px">Use curl or another HTTP client to call /api/extsensors/trigger</p></div>';
+      document.getElementById('page-dashboard').classList.add('active');
+    }
     if(d.forcePasswordChange){
       document.getElementById('pwModal').classList.add('show');
       document.getElementById('pwCurrent').focus();
@@ -761,7 +766,7 @@ async function loadUsers(){
     h+='<tr><th style="text-align:left;padding:8px 12px;font-size:12px;color:#86868b;font-weight:600">Username</th><th style="text-align:left;padding:8px 12px;font-size:12px;color:#86868b;font-weight:600">Role</th><th style="text-align:left;padding:8px 12px;font-size:12px;color:#86868b;font-weight:600">PIN</th><th style="text-align:right;padding:8px 12px;font-size:12px;color:#86868b;font-weight:600">Actions</th></tr>';
     users.forEach(u=>{
       h+='<tr style="border-top:1px solid #f0f0f5"><td style="padding:10px 12px;font-size:14px;font-weight:500">'+u.username+'</td>';
-      h+='<td style="padding:10px 12px;font-size:13px;color:#86868b">'+(u.role==0?'Admin':'Operator')+'</td>';
+      h+='<td style="padding:10px 12px;font-size:13px;color:#86868b">'+(u.role==0?'Admin':u.role==2?'API':'Operator')+'</td>';
       h+='<td style="padding:10px 12px;font-size:13px;font-family:monospace;color:#86868b">'+u.pin+'</td>';
       h+='<td style="text-align:right;padding:10px 12px"><button class="btn btn-danger" onclick="deleteUser('+u.id+',\''+u.username+'\')" style="font-size:11px;padding:4px 12px">Delete</button></td></tr>';
     });
@@ -1168,7 +1173,7 @@ async function renderExtCards(a){
 async function loadExtSensors(){
   const r=await fetch('/api/extsensors');
   renderExtCards(await r.json());
-  if(data.mqtt_base) document.getElementById('extSubtitle').textContent='Topic: '+data.mqtt_base+'/ext_sensor/1..16 | Payload: active/idle (on/off)';
+  if(data.mqtt_base) document.getElementById('extSubtitle').innerHTML='<strong>MQTT Topic:</strong> '+data.mqtt_base+'/ext_sensor/1..16 | Payload: active/idle (on/off)<br><strong>REST API:</strong><br><span style="font-family:monospace;font-size:10px">COOKIE_JAR=$(mktemp)</span><br><span style="font-family:monospace;font-size:10px">curl -s -c "$COOKIE_JAR" -X POST -d "user=api_user&pass=api_user" http://alarm.local/api/login</span><br><span style="font-family:monospace;font-size:10px">curl -s -b "$COOKIE_JAR" "http://alarm.local/api/extsensors/trigger?id=1&state=on"</span><br><span style="font-family:monospace;font-size:10px">curl -s -b "$COOKIE_JAR" "http://alarm.local/api/extsensors/trigger?id=1&state=off"</span>';
 }
 async function saveExtSensors(){
   const body=new URLSearchParams();
@@ -1943,6 +1948,27 @@ void initWebServer() {
     },
     handleOTAUpload);
 
+  // External sensor trigger (for testing / API integration) — must be before generic ext sensors
+  server.on("/api/extsensors/trigger", HTTP_GET, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
+    int id = req->arg("id").toInt();
+    String state = req->arg("state");
+    if (id < 1 || id > MAX_EXT_SENSORS) {
+      req->send(400, "application/json", "{\"error\":\"invalid id (1-" + String(MAX_EXT_SENSORS) + ")\"}");
+      return;
+    }
+    bool active = (state == "active" || state == "1" || state == "on");
+    bool wasActive = extSensorStates[id - 1].active;
+    extSensorStates[id - 1].active = active;
+    extSensorStates[id - 1].lastChangeMs = millis();
+    if (active != wasActive) {
+      char buf[80];
+      snprintf(buf, sizeof(buf), "E%d '%s' -> %s (API)", id, config.extSensors[id-1].name, active ? "ACTIVE" : "IDLE");
+      logSensor(buf);
+    }
+    req->send(200, "application/json", "{\"ok\":true}");
+  });
+
   server.on("/api/extsensors", HTTP_GET, [](AsyncWebServerRequest *req) {
     if (!requireAuth(req)) return;
     apiExtSensorsConfig(req);
@@ -2136,17 +2162,23 @@ void initWebServer() {
   // Reset auth entirely (recovery endpoint — no auth required)
   server.on("/api/reset-auth", HTTP_POST, [](AsyncWebServerRequest *req) {
     String freshHash = hashPassword("admin");
+    String apiHash = hashPassword("api_user");
     memset(config.users, 0, sizeof(config.users));
     strlcpy(config.users[0].username, "admin", sizeof(config.users[0].username));
     strlcpy(config.users[0].passwordHash, freshHash.c_str(), sizeof(config.users[0].passwordHash));
     strlcpy(config.users[0].pin, "0000", sizeof(config.users[0].pin));
     config.users[0].role   = USER_ROLE_ADMIN;
     config.users[0].active = true;
-    config.userCount = 1;
+    strlcpy(config.users[1].username, "api_user", sizeof(config.users[1].username));
+    strlcpy(config.users[1].passwordHash, apiHash.c_str(), sizeof(config.users[1].passwordHash));
+    strlcpy(config.users[1].pin, "0001", sizeof(config.users[1].pin));
+    config.users[1].role   = USER_ROLE_API;
+    config.users[1].active = true;
+    config.userCount = 2;
     config.authMigrated = EEPROM_AUTH_MIGRATED_FLAG;
     config.forcePasswordChange = true;
     saveConfig();
-    req->send(200, "application/json", "{\"ok\":true,\"msg\":\"Auth reset — password is now admin/admin\"}");
+    req->send(200, "application/json", "{\"ok\":true,\"msg\":\"Auth reset — admin/admin + api_user/api_user\"}");
   });
 
   // Temporary: force siren zoneId to 0
