@@ -483,10 +483,11 @@ small{color:var(--muted);font-size:12px}
 .ext-box .edot{width:12px;height:12px;border-radius:50%}
 .ext-box .edot.idle{background:var(--green)}
 .ext-box .edot.active{background:var(--red)}
+.ext-box .edot.disabled{background:var(--muted)}
 .ext-box .elabel{font-size:12px;font-weight:600;line-height:1.2;color:var(--fg);letter-spacing:-0.01em}
-.ext-box .estate{font-size:13px;font-weight:600}
-.ext-box .estate.idle{color:var(--green)}
-.ext-box .estate.active{color:var(--red)}
+.ext-box .estate{font-size:10px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:0.02em}
+.ext-box .estate.active-state{color:var(--red)}
+.ext-box.disabled{border-color:var(--border);background:var(--card);opacity:0.5}
 .sens-foot{display:flex;justify-content:flex-end;margin-top:8px}
 .sens-upd{background:var(--blue);padding:6px 16px;border:none;border-radius:8px;cursor:pointer;font-size:12px;color:#fff;font-weight:500;letter-spacing:-0.01em;transition:opacity 0.2s,transform 0.1s}
 .sens-upd:hover{opacity:0.88}.sens-upd:active{transform:scale(0.97)}
@@ -586,8 +587,8 @@ small{color:var(--muted);font-size:12px}
 <div class="info-cards" id="infoCards">Loading...</div>
 <div class="card"><h2>Alarm Mode</h2><div id="modeGrid">Loading...</div></div>
 <div class="card"><h2>Zones</h2><div id="zones">Loading...</div></div>
-<div class="card"><h2>Sensors</h2><div id="sensors">Loading...</div></div>
 <div class="card"><h2>Relays</h2><div id="relays">Loading...</div></div>
+<div class="card"><h2>Sensors</h2><div id="sensors">Loading...</div></div>
 <div class="card"><h2>External Sensors</h2><div id="extensors">Loading...</div></div>
 </div>
 <div id="page-extsensors" class="page"><h1>External Sensor Configuration</h1>
@@ -949,20 +950,23 @@ async function setMode(mode) {
 }
 
 function renderExtSensors(a){
-  let h='';
+  let h='<div class="sensor-grid">';
   for(let row=0;row<2;row++){
     h+='<div class="sensor-row">';
     for(let i=row*8;i<Math.min(row*8+8,a.length);i++){
       let e=a[i];
-      let st=e.active?'active':'idle';
+      let en=e.enabled!==false;
+      let st=en?(e.active?'active':'idle'):'disabled';
+      let stateCls=en?(e.active?'active-state':''):'';
       h+=`<div class="ext-box ${st}">
-<span class="edot ${st}"></span>
+<span class="edot ${en?(e.active?'active':'idle'):'disabled'}"></span>
 <span class="elabel">E${e.id}</span>
-<span class="estate ${st}">${e.active?'Active':'Idle'}</span>
+<span class="estate ${stateCls}">${en?(e.active?'ACTIVE':'IDLE'):'OFF'}</span>
 </div>`;
     }
     h+='</div>';
   }
+  h+='</div>';
   document.getElementById('extensors').innerHTML=h;
 }
 
@@ -1896,28 +1900,48 @@ static void apiZonesConfig(AsyncWebServerRequest *req) {
 // ─── OTA firmware upload handler ───────────────────────────────────────────
 
 static void handleOTAUpload(AsyncWebServerRequest *req, String filename, size_t index, uint8_t *data, size_t len, bool final) {
+  static bool otaFailed = false;
+  if (otaFailed) return;  // silently discard chunks after a failure
+
   if (!index) {
-    Serial.printf("[OTA] Upload starting: %s (%u bytes)\n", filename.c_str(), req->contentLength());
-    if (!Update.begin(req->contentLength(), U_FLASH)) {
+    otaFailed = false;
+    size_t totalSize = req->contentLength();
+    if (totalSize == 0) totalSize = UPDATE_SIZE_UNKNOWN;
+    Serial.printf("[OTA] Upload starting: %s (%u bytes)\n", filename.c_str(), totalSize);
+    if (!Update.begin(totalSize, U_FLASH)) {
       Update.printError(Serial);
       req->send(500, "text/plain", "OTA begin failed");
+      otaFailed = true;
       return;
     }
   }
-  if (Update.write(data, len) != len) {
-    Update.printError(Serial);
-    req->send(500, "text/plain", "OTA write failed");
-    return;
+
+  // Progress logging every ~25% based on contentLength
+  static size_t otaWritten = 0;
+  static size_t otaTotal   = 0;
+  static int    otaNextPct = 25;
+
+  if (len > 0) {
+    if (Update.write(data, len) != len) {
+      Update.printError(Serial);
+      req->send(500, "text/plain", "OTA write failed");
+      otaFailed = true;
+      return;
+    }
+    otaWritten += len;
+    yield();
   }
+
   if (final) {
     if (Update.end(true)) {
       Serial.println("[OTA] Upload complete, restarting...");
       req->send(200, "text/plain", "OK");
-      delay(500);
+      delay(50);
       ESP.restart();
     } else {
       Update.printError(Serial);
       req->send(500, "text/plain", "OTA end failed");
+      otaFailed = true;
     }
   }
 }
@@ -1945,6 +1969,7 @@ void initWebServer() {
   server.on("/api/ota", HTTP_POST,
     [](AsyncWebServerRequest *req) {
       if (!requireAuth(req)) return;
+      if (!checkHeap(req)) return;
     },
     handleOTAUpload);
 
