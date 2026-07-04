@@ -7,6 +7,9 @@ static uint32_t wifiRetryNextMs       = 0;
 static uint32_t apScanNextMs          = 0;
 static bool     wifiWasEverConnected  = false;  // track if we ever had WiFi
 
+// ─── Async WiFi scan state ─────────────────────────────────────────────────
+static bool     apScanAsyncActive     = false;  // true while async scan is running
+
 // Non-blocking WiFi station connection state machine
 enum class WifiConnectState : uint8_t {
   IDLE,
@@ -149,33 +152,49 @@ void wifiStationRetryLoop() {
 
   // ─── Case 2: In AP mode — periodically scan for configured SSID ─────────
   if (apMode) {
+    // If an async scan is already running, check if results are ready
+    if (apScanAsyncActive) {
+      int8_t n = WiFi.scanComplete();
+      if (n == WIFI_SCAN_RUNNING) return;  // still scanning — come back later
+      if (n == WIFI_SCAN_FAILED) {
+        apScanAsyncActive = false;
+        apScanNextMs = now + WIFI_AP_SCAN_INTERVAL_MS;
+        return;
+      }
+      // Scan complete — check results
+      apScanAsyncActive = false;
+      bool found = false;
+      for (int8_t i = 0; i < n; i++) {
+        if (WiFi.SSID(i) == String(config.wifiSsid)) {
+          found = true;
+          break;
+        }
+      }
+      WiFi.scanDelete();
+
+      if (found) {
+        // Switch back to station mode
+        logSystem("Configured SSID found, switching back to station");
+        WiFi.softAPdisconnect(true);
+        apMode = false;
+        wifiRetryCount = 0;
+        wifiRetryNextMs = 0;
+        if (!connectWiFiStation()) {
+          // Failed to connect despite seeing SSID — keep trying
+          wifiRetryCount = 1;
+          wifiRetryNextMs = now + WIFI_RETRY_INTERVAL_MS;
+        }
+      } else {
+        apScanNextMs = now + WIFI_AP_SCAN_INTERVAL_MS;
+      }
+      return;
+    }
+
+    // No scan active — start one if interval elapsed
     if (now < apScanNextMs) return;
-    apScanNextMs = now + WIFI_AP_SCAN_INTERVAL_MS;
-
-    // Quick scan for the configured SSID
-    int n = WiFi.scanNetworks(false, true);  // async=false, show_hidden=true
-    bool found = false;
-    for (int i = 0; i < n; i++) {
-      if (WiFi.SSID(i) == String(config.wifiSsid)) {
-        found = true;
-        break;
-      }
-    }
-    WiFi.scanDelete();
-
-    if (found) {
-      // Switch back to station mode
-      logSystem("Configured SSID found, switching back to station");
-      WiFi.softAPdisconnect(true);
-      apMode = false;
-      wifiRetryCount = 0;
-      wifiRetryNextMs = 0;
-      if (!connectWiFiStation()) {
-        // Failed to connect despite seeing SSID — keep trying
-        wifiRetryCount = 1;
-        wifiRetryNextMs = now + WIFI_RETRY_INTERVAL_MS;
-      }
-    }
+    // Start async scan (non-blocking — results checked in subsequent iterations)
+    WiFi.scanNetworks(true, true);  // async=true, show_hidden=true
+    apScanAsyncActive = true;
     return;
   }
 

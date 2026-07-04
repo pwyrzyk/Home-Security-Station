@@ -149,6 +149,22 @@ void setDefaults() {
   config.forcePasswordChange = true;
 }
 
+// ─── Deferred config save (dirty-flag pattern) ────────────────────────────
+// Async web handlers call requestSaveConfig() instead of saveConfig() to
+// avoid blocking the async TCP thread with a multi-hundred-ms EEPROM write.
+// configSaveLoop() (called from main loop) performs the actual write.
+static bool configSavePending = false;
+
+void requestSaveConfig() {
+  configSavePending = true;
+}
+
+void configSaveLoop() {
+  if (!configSavePending) return;
+  configSavePending = false;
+  saveConfig();
+}
+
 void saveConfig() {
   EEPROM.put(0, config);
   EEPROM.commit();

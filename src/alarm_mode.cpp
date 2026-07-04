@@ -70,7 +70,7 @@ bool armMode(AlarmMode mode, const char* source) {
   for (uint8_t z = 1; z <= MAX_ZONES; z++) {
     if (!(effectiveMask & (1U << (z - 1)))) {
       if (isZoneArmed(z)) {
-        zoneDisarm(z);
+        zoneDisarmNoSave(z);
       }
     }
   }
@@ -78,13 +78,13 @@ bool armMode(AlarmMode mode, const char* source) {
   // Arm zones in the mode
   for (uint8_t z = 1; z <= MAX_ZONES; z++) {
     if (effectiveMask & (1U << (z - 1))) {
-      zoneArm(z);
+      zoneArmNoSave(z);
     }
   }
 
   alarmCtx.activeMode = mode;
   alarmCtx.activeZoneMask = effectiveMask;
-  saveArmedState();  // persist for power-fail recovery
+  saveArmedState();  // single persist after batch
 
   char buf[100];
   snprintf(buf, sizeof(buf), "Alarm mode set to '%s' by %s (mask=0x%02X)",
@@ -102,13 +102,13 @@ void disarmMode(const char* source) {
   // Only disarm zones that are actually armed (idempotent)
   for (uint8_t z = 1; z <= MAX_ZONES; z++) {
     if (isZoneArmed(z)) {
-      zoneDisarm(z);
+      zoneDisarmNoSave(z);
     }
   }
 
   alarmCtx.activeMode = AlarmMode::DISARMED;
   alarmCtx.activeZoneMask = 0;
-  saveArmedState();  // persist for power-fail recovery
+  saveArmedState();  // single persist after batch
 
   char buf[80];
   snprintf(buf, sizeof(buf), "Alarm disarmed by %s", source);

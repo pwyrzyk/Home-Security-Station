@@ -14,6 +14,24 @@
 
 AsyncWebServer server(HTTP_PORT);
 
+// ─── Deferred action flags (set by async handlers, executed in webLoop) ───
+bool pendingRestart  = false;
+bool pendingReconnect = false;
+
+void webLoop() {
+  if (pendingRestart) {
+    pendingRestart = false;
+    delay(100);   // allow HTTP response to flush
+    ESP.restart();
+  }
+  if (pendingReconnect) {
+    pendingReconnect = false;
+    WiFi.disconnect();
+    delay(500);
+    ensureWiFiMode();
+  }
+}
+
 // ─── Heap guard ────────────────────────────────────────────────────────────
 #define HEAP_SAFETY_THRESHOLD 25000   // 25 KB minimum free heap
 
@@ -229,7 +247,7 @@ static void apiSensorsConfig(AsyncWebServerRequest *req) {
         else if (config.sensors[i].type == SENSOR_DISABLED) config.sensors[i].type = SENSOR_CONTACTRON;
       }
     }
-    saveConfig();
+    requestSaveConfig();
     req->send(200, "application/json", "{\"ok\":true,\"saved\":true}");
   }
 }
@@ -261,23 +279,19 @@ static void apiNetworkConfig(AsyncWebServerRequest *req) {
     if (req->hasArg("mqttPort"))  config.mqttPort = req->arg("mqttPort").toInt();
     if (req->hasArg("mqttUser"))  strlcpy(config.mqttUser, req->arg("mqttUser").c_str(), sizeof(config.mqttUser));
     if (req->hasArg("mqttPass"))  strlcpy(config.mqttPass, req->arg("mqttPass").c_str(), sizeof(config.mqttPass));
-    saveConfig();
+    requestSaveConfig();
     req->send(200, "application/json", "{\"ok\":true,\"saved\":true}");
   }
 }
 
 static void apiRestart(AsyncWebServerRequest *req) {
   req->send(200, "application/json", "{\"ok\":true}");
-  delay(100);
-  ESP.restart();
+  pendingRestart = true;   // deferred — executed in webLoop()
 }
 
 static void apiReconnect(AsyncWebServerRequest *req) {
   req->send(200, "application/json", "{\"ok\":true}");
-  delay(100);
-  WiFi.disconnect();
-  delay(500);
-  ensureWiFiMode();
+  pendingReconnect = true;  // deferred — executed in webLoop()
 }
 
 static void apiZoneCommand(AsyncWebServerRequest *req) {
@@ -1784,7 +1798,7 @@ static void apiChangePassword(AsyncWebServerRequest *req) {
       String newHash = hashPassword(newPass.c_str());
       strlcpy(config.users[i].passwordHash, newHash.c_str(), sizeof(config.users[i].passwordHash));
       config.forcePasswordChange = false;
-      saveConfig();
+      saveConfig();  // immediate — password change must persist before response
       logSystem("Password changed");
       req->send(200, "application/json", "{\"ok\":true,\"message\":\"Password changed successfully\"}");
       return;
@@ -1823,7 +1837,7 @@ static void apiExtSensorsConfig(AsyncWebServerRequest *req) {
         config.extSensors[i].zoneMask = (uint16_t)req->arg((prefix + "_zones").c_str()).toInt();
       }
     }
-    saveConfig();
+    requestSaveConfig();
     req->send(200, "application/json", "{\"ok\":true,\"saved\":true}");
   }
 }
@@ -1867,7 +1881,7 @@ static void apiAlarmModesConfig(AsyncWebServerRequest *req) {
     config.modeProfiles[(uint8_t)AlarmMode::DISARMED].zoneMask = 0;
     config.modeProfiles[(uint8_t)AlarmMode::DISARMED].defined  = true;
 
-    saveConfig();
+    requestSaveConfig();
     req->send(200, "application/json", "{\"ok\":true,\"saved\":true}");
   }
 }
@@ -1938,7 +1952,7 @@ static void apiZonesConfig(AsyncWebServerRequest *req) {
       config.zones[i].alarmRelayOnS = (uint8_t)req->arg((prefix + "_alarmRelayOnS").c_str()).toInt();
       config.zones[i].alarmRelayOffS = (uint8_t)req->arg((prefix + "_alarmRelayOffS").c_str()).toInt();
     }
-    saveConfig();
+    requestSaveConfig();
     req->send(200, "application/json", "{\"ok\":true,\"saved\":true}");
   }
 }
@@ -2230,7 +2244,7 @@ void initWebServer() {
     config.users[slot].role   = (uint8_t)roleStr.toInt();
     config.users[slot].active = true;
     config.userCount++;
-    saveConfig();
+    requestSaveConfig();
     char logBuf[80];
     snprintf(logBuf, sizeof(logBuf), "User '%s' added", username.c_str());
     logSystem(logBuf);
@@ -2260,7 +2274,7 @@ void initWebServer() {
     logSystem(logBuf);
     config.users[id].active = false;
     config.userCount--;
-    saveConfig();
+    requestSaveConfig();
     req->send(200, "application/json", "{\"ok\":true}");
   });
 
@@ -2282,7 +2296,7 @@ void initWebServer() {
     config.userCount = 2;
     config.authMigrated = EEPROM_AUTH_MIGRATED_FLAG;
     config.forcePasswordChange = true;
-    saveConfig();
+    requestSaveConfig();
     req->send(200, "application/json", "{\"ok\":true,\"msg\":\"Auth reset — admin/admin + api_user/api_user\"}");
   });
 
@@ -2290,7 +2304,7 @@ void initWebServer() {
   server.on("/api/fix-siren", HTTP_POST, [](AsyncWebServerRequest *req) {
     if (!requireAuth(req)) return;
     config.relays[0].zoneId = 0;
-    saveConfig();
+    requestSaveConfig();
     req->send(200, "application/json", "{\"ok\":true,\"msg\":\"Siren zoneId set to 0\"}");
   });
 
@@ -2332,7 +2346,7 @@ void initWebServer() {
         relayManualOverride[i] = false;
       }
     }
-    saveConfig();
+    requestSaveConfig();
     req->send(200, "application/json", "{\"ok\":true}");
   });
 

@@ -116,6 +116,12 @@ void loop() {
   mqttFlushPostConnect();
   mqttStatusLoop();
 
+  // ─── Deferred config save (dirty-flag flush) ───────────────────────────
+  configSaveLoop();
+
+  // ─── Deferred web actions (restart/reconnect) ──────────────────────────
+  webLoop();
+
   // ─── Event log batch flush ────────────────────────────────────────────
   eventLogFlushIfNeeded();
 

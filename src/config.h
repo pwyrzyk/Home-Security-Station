@@ -341,7 +341,9 @@ extern AlarmContext alarmCtx;
 
 // ─── Functions ─────────────────────────────────────────────────────────────
 void setDefaults();
-void saveConfig();
+void saveConfig();           // immediate EEPROM write (blocking — use sparingly)
+void requestSaveConfig();   // deferred — sets dirty flag, flushed in loop()
+void configSaveLoop();      // called from loop() to flush pending save
 void loadConfig();
 void computeDeviceIdentifiers();
 void saveArmedState();

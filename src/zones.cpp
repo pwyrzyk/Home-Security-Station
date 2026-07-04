@@ -13,7 +13,11 @@ static void notifyZoneChange(uint8_t zoneId) {
   if (onZoneStateChanged) onZoneStateChanged(zoneId);
 }
 
-void zoneArm(uint8_t zoneId) {
+// ─── Internal implementations (no EEPROM save) ────────────────────────────
+// Batch callers (armAllZones, disarmAllZones, armMode, disarmMode) use these
+// to avoid N redundant EEPROM writes, then call saveArmedState() once.
+
+void zoneArmNoSave(uint8_t zoneId) {
   if (zoneId < 1 || zoneId > MAX_ZONES) return;
   uint8_t idx = zoneId - 1;
   if (zoneStates[idx].alarmState == ZONE_DISARMED) {
@@ -25,11 +29,10 @@ void zoneArm(uint8_t zoneId) {
       zoneStates[idx].alarmState = ZONE_ARMED_IDLE;
     }
     notifyZoneChange(zoneId);
-    saveArmedState();  // persist for power-fail recovery
   }
 }
 
-void zoneDisarm(uint8_t zoneId) {
+void zoneDisarmNoSave(uint8_t zoneId) {
   if (zoneId < 1 || zoneId > MAX_ZONES) return;
   uint8_t idx = zoneId - 1;
   zoneStates[idx].armed = false;
@@ -37,6 +40,17 @@ void zoneDisarm(uint8_t zoneId) {
   zoneStates[idx].preAlarmStartMs = 0;
   // siren timing is managed by syncRelays() relay-level state machines
   notifyZoneChange(zoneId);
+}
+
+// ─── Public API (single-zone — persists immediately) ───────────────────────
+
+void zoneArm(uint8_t zoneId) {
+  zoneArmNoSave(zoneId);
+  saveArmedState();  // persist for power-fail recovery
+}
+
+void zoneDisarm(uint8_t zoneId) {
+  zoneDisarmNoSave(zoneId);
   saveArmedState();  // persist for power-fail recovery
 }
 
@@ -46,14 +60,18 @@ void zoneToggle(uint8_t zoneId) {
   else zoneArm(zoneId);
 }
 
+// ─── Batch operations (single EEPROM write) ────────────────────────────────
+
 void armAllZones() {
   lastZoneCmdSource = "system";
-  for (uint8_t i = 1; i <= MAX_ZONES; i++) zoneArm(i);
+  for (uint8_t i = 1; i <= MAX_ZONES; i++) zoneArmNoSave(i);
+  saveArmedState();  // single persist after batch
 }
 
 void disarmAllZones() {
   lastZoneCmdSource = "system";
-  for (uint8_t i = 1; i <= MAX_ZONES; i++) zoneDisarm(i);
+  for (uint8_t i = 1; i <= MAX_ZONES; i++) zoneDisarmNoSave(i);
+  saveArmedState();  // single persist after batch
 }
 
 bool isZoneArmed(uint8_t zoneId) {

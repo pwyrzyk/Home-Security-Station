@@ -40,15 +40,25 @@ void initHardware() {
   digitalWrite(LED_BUILTIN, LOW);
 }
 
+// ─── ADC round-robin (non-blocking) ────────────────────────────────────────
+// Instead of reading all 16 channels in one call (which blocks ~125 ms due to
+// single-shot conversion waits), we read ONE channel per call. At 100 ms loop
+// cadence, all 16 channels are refreshed every ~1.6 s — more than enough for
+// alarm sensors. This keeps each loop iteration under ~8 ms.
+static uint8_t adcNextChannel = 0;  // 0..15, global round-robin index
+
 void readAllAdcChannels() {
-  for (int chip = 0; chip < ADS_COUNT; chip++) {
-    for (int ch = 0; ch < ADS_CHANNELS; ch++) {
-      int idx = chip * ADS_CHANNELS + ch;
-      int16_t raw = ads[chip].readADC_SingleEnded(ch);
-      if (raw < 0) raw = 0;
-      sensorStates[idx].rawValue = (uint16_t)raw;
-    }
-  }
+  // Read exactly one channel this iteration
+  uint8_t idx = adcNextChannel;
+  uint8_t chip = idx / ADS_CHANNELS;
+  uint8_t ch   = idx % ADS_CHANNELS;
+
+  int16_t raw = ads[chip].readADC_SingleEnded(ch);
+  if (raw < 0) raw = 0;
+  sensorStates[idx].rawValue = (uint16_t)raw;
+
+  // Advance to next channel for the next call
+  adcNextChannel = (adcNextChannel + 1) % TOTAL_SENSORS;
 }
 
 void setRelay(uint8_t idx, bool on) {
