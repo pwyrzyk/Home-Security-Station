@@ -36,8 +36,9 @@ bool connectWiFiStation() {
   if (wifiConnectState == WifiConnectState::POLLING) return false;
 
   // Start new attempt
-  WiFi.setHostname(OTA_HOSTNAME);
+  // Set mode BEFORE hostname — ESP32 requires mode set first for hostname to stick
   WiFi.mode(WIFI_STA);
+  WiFi.setHostname(OTA_HOSTNAME);
   WiFi.begin(config.wifiSsid, config.wifiPass);
   wifiConnectState  = WifiConnectState::POLLING;
   wifiConnectStartMs = millis();
@@ -210,26 +211,32 @@ void wifiStationRetryLoop() {
 // ─── OTA ───────────────────────────────────────────────────────────────────
 
 void initOTA() {
+  // ─── mDNS — always start, regardless of OTA enabled/disabled ──────────
+  // mDNS makes the device reachable as http://alarm.local and advertises
+  // the HTTP service. This must NOT be skipped when OTA is disabled.
+  if (MDNS.begin(OTA_HOSTNAME)) {
+    MDNS.addService("http", "tcp", HTTP_PORT);
+    char buf[60];
+    snprintf(buf, sizeof(buf), "mDNS active: http://%s.local", OTA_HOSTNAME);
+    logSystem(buf);
+  } else {
+    logSystem("mDNS init failed");
+  }
+
+  // ─── ArduinoOTA — only enable if a password is configured ─────────────
   ArduinoOTA.setPort(OTA_PORT);
-  // Only enable OTA authentication if a password is configured.
-  // An empty OTA_PASSWORD disables OTA to avoid unauthenticated updates.
+  ArduinoOTA.setHostname(OTA_HOSTNAME);
   if (strlen(OTA_PASSWORD) > 0) {
     ArduinoOTA.setPassword(OTA_PASSWORD);
+    ArduinoOTA.onStart([]() {});
+    ArduinoOTA.onEnd([]() {});
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {});
+    ArduinoOTA.onError([](ota_error_t error) {});
+    ArduinoOTA.begin();
+    logSystem("OTA enabled");
   } else {
     logSystem("OTA disabled — no password configured");
-    return;
   }
-  ArduinoOTA.setHostname(OTA_HOSTNAME);
-
-  ArduinoOTA.onStart([]() {});
-  ArduinoOTA.onEnd([]() {});
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {});
-  ArduinoOTA.onError([](ota_error_t error) {});
-  ArduinoOTA.begin();
-
-  // mDNS
-  MDNS.begin(OTA_HOSTNAME);
-  MDNS.addService("http", "tcp", HTTP_PORT);
 }
 
 // ─── NTP ───────────────────────────────────────────────────────────────────
