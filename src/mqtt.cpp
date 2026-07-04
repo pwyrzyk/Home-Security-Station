@@ -221,6 +221,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int len) {
         char buf[80];
         snprintf(buf, sizeof(buf), "E%d '%s' -> %s", s, config.extSensors[s-1].name, active ? "ACTIVE" : "IDLE");
         logSensor(buf);
+        updateZoneSensorCache();  // keep zone tripped cache in sync
       }
     }
     return;

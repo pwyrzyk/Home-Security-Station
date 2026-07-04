@@ -225,5 +225,15 @@ void syncNTP() {
   if (now - lastNtpAttempt < 3600000UL) return; // every hour
   lastNtpAttempt = now;
 
+  bool wasSynced = ntpSynced();
   configTime(TZ_OFFSET_SEC, 0, NTP_SERVER);
+
+  // If NTP just became available for the first time, update the auth
+  // session clock so active sessions don't instantly expire due to the
+  // jump from millis-based fake time to real epoch time.
+  if (!wasSynced && ntpSynced()) {
+    lastNtpTime = time(nullptr);
+    extern void onNtpSynced(uint32_t realEpoch);
+    onNtpSynced(lastNtpTime);
+  }
 }

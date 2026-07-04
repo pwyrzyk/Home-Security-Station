@@ -10,8 +10,33 @@ static const char* sensorStateLabel(SensorState s) {
 }
 
 
+// ─── Forward declaration ──────────────────────────────────────────────────
+extern bool zoneSensorActiveCache[MAX_ZONES];
+
+// ─── Recompute zoneSensorActiveCache after sensor state changes ───────────
+void updateZoneSensorCache() {
+  memset(zoneSensorActiveCache, 0, sizeof(zoneSensorActiveCache));
+  for (int s = 0; s < TOTAL_SENSORS; s++) {
+    if (config.sensors[s].type == SENSOR_DISABLED) continue;
+    if (sensorStates[s].state != SENSOR_ACTIVE) continue;
+    uint16_t mask = config.sensors[s].zoneMask;
+    for (int z = 0; z < MAX_ZONES; z++) {
+      if (mask & (1U << z)) zoneSensorActiveCache[z] = true;
+    }
+  }
+  for (int s = 0; s < MAX_EXT_SENSORS; s++) {
+    if (!config.extSensors[s].enabled) continue;
+    if (!extSensorStates[s].active) continue;
+    uint16_t mask = config.extSensors[s].zoneMask;
+    for (int z = 0; z < MAX_ZONES; z++) {
+      if (mask & (1U << z)) zoneSensorActiveCache[z] = true;
+    }
+  }
+}
+
 void sensorsLoop() {
   uint32_t now = millis();
+  bool anyStateChanged = false;
 
   for (int i = 0; i < TOTAL_SENSORS; i++) {
     SensorConfig   &cfg = config.sensors[i];
@@ -69,20 +94,28 @@ void sensorsLoop() {
     bool finalActive = stable ? (target == 1) : (st.state == SENSOR_ACTIVE);
     bool finalFault  = stable ? (target == 2) : (st.state == SENSOR_FAULT);
 
-    // ─── On/Off delay timers ────────────────────────────────────────────
+    // ─── On/Off delay timers (used for both ACTIVE and FAULT transitions) ──
     if (finalFault && st.state != SENSOR_FAULT) {
-      SensorState prevState = st.state;
-      st.state        = SENSOR_FAULT;
-      st.lastChangeMs = now;
-      char buf[64];
-      snprintf(buf, sizeof(buf), "T%d '%s' %s -> FAULT raw=%u mV", i+1, cfg.name, sensorStateLabel(prevState), raw);
-      logSensor(buf);
+      // Reuse onDelayMs as fault-entry delay — prevents noise-triggered faults
+      if (st.activeSinceMs == 0) st.activeSinceMs = now;
+      if (now - st.activeSinceMs >= cfg.onDelayMs) {
+        SensorState prevState = st.state;
+        st.state        = SENSOR_FAULT;
+        st.lastChangeMs = now;
+        st.idleSinceMs  = 0;
+        st.activeSinceMs = 0;
+        anyStateChanged = true;
+        char buf[64];
+        snprintf(buf, sizeof(buf), "T%d '%s' %s -> FAULT raw=%u mV", i+1, cfg.name, sensorStateLabel(prevState), raw);
+        logSensor(buf);
+      }
     } else if (finalActive && st.state == SENSOR_IDLE) {
       if (st.activeSinceMs == 0) st.activeSinceMs = now;
       if (now - st.activeSinceMs >= cfg.onDelayMs) {
         st.state        = SENSOR_ACTIVE;
         st.lastChangeMs = now;
         st.idleSinceMs  = 0;
+        anyStateChanged = true;
         char buf[64];
         snprintf(buf, sizeof(buf), "T%d '%s' IDLE -> ACTIVE raw=%u mV", i+1, cfg.name, raw);
         logSensor(buf);
@@ -93,6 +126,7 @@ void sensorsLoop() {
         st.state        = SENSOR_IDLE;
         st.lastChangeMs = now;
         st.activeSinceMs = 0;
+        anyStateChanged = true;
         char buf[64];
         snprintf(buf, sizeof(buf), "T%d '%s' ACTIVE -> IDLE raw=%u mV", i+1, cfg.name, raw);
         logSensor(buf);
@@ -101,6 +135,11 @@ void sensorsLoop() {
       if (finalActive) st.idleSinceMs   = 0;
       else             st.activeSinceMs = 0;
     }
+  }
+
+  // Rebuild zone sensor activity cache if any sensor changed state
+  if (anyStateChanged) {
+    updateZoneSensorCache();
   }
 }
 

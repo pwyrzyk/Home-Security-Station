@@ -314,6 +314,9 @@ struct ZoneStateData {
 
 extern ZoneStateData zoneStates[MAX_ZONES];
 
+// ─── Zone sensor activity cache (set by sensorsLoop, consumed by alarm engine) ───
+extern bool zoneSensorActiveCache[MAX_ZONES];  // true = at least one sensor tripped in zone
+
 // ─── Relay runtime ─────────────────────────────────────────────────────────
 extern bool relayStates[MAX_RELAYS];
 extern bool relayManualOverride[MAX_RELAYS];

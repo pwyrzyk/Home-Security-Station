@@ -21,6 +21,7 @@ bool relayManualOverride[MAX_RELAYS];
 bool relayManualState[MAX_RELAYS];
 bool dinputStates[MAX_DINPUTS];
 ExtSensorState extSensorStates[MAX_EXT_SENSORS];
+bool zoneSensorActiveCache[MAX_ZONES];  // dirty-flag cache for zoneSensorTripped()
 
 AlarmContext alarmCtx;
 

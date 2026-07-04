@@ -7,6 +7,7 @@
 #define MAX_SESSIONS 4
 static AuthSession sessions[MAX_SESSIONS];
 static uint32_t lastPurgeSec = 0;
+static uint32_t fakeToRealOffset = 0;  // added to millis-based timestamps after NTP sync
 
 // ─── IP rate-limit tracking ─────────────────────────────────────────────────
 static IpTracker ipTrackers[MAX_TRACKED_IPS];
@@ -296,6 +297,44 @@ String getClientIP(AsyncWebServerRequest *req) {
         return (comma > 0) ? forwarded.substring(0, comma) : forwarded;
     }
     return req->client()->remoteIP().toString();
+}
+
+// ─── NTP sync callback — adjusts session timestamps when real time arrives ─
+// Called from syncNTP() when the system transitions from millis-based fake
+// clock to real Unix epoch time. Prevents sessions from instantly expiring
+// due to the timestamp discontinuity.
+void onNtpSynced(uint32_t realEpoch) {
+  // Nothing to do if no sessions or no fake clock in use
+  if (lastNtpTime == 0) return;
+
+  // Compute the fake timestamp at the moment of NTP sync
+  uint32_t fakeAtSync = millis() / 1000;
+
+  // Offset: what to add to a fake timestamp to get a real epoch
+  // (realEpoch - fakeAtSync), clamped to avoid underflow if somehow
+  // realEpoch < fakeAtSync (should never happen in practice)
+  int64_t offset = (int64_t)realEpoch - (int64_t)fakeAtSync;
+  if (offset <= 0) return;  // nothing to adjust
+
+  unsigned adjusted = 0;
+  for (int i = 0; i < MAX_SESSIONS; i++) {
+    if (!sessions[i].active) continue;
+    // Only adjust timestamps that were set before NTP sync.
+    // A crude heuristic: timestamps < 100000 (2001 epoch) are definitely
+    // from the fake clock. Real Unix timestamps are always > 1.7e9 in 2024+.
+    if (sessions[i].createdAt < 100000) {
+      sessions[i].createdAt    += (uint32_t)offset;
+      if (sessions[i].lastActivity < 100000) {
+        sessions[i].lastActivity += (uint32_t)offset;
+      }
+      adjusted++;
+    }
+  }
+  if (adjusted > 0) {
+    char buf[70];
+    snprintf(buf, sizeof(buf), "NTP synced: adjusted %u session timestamps", adjusted);
+    logSystem(buf);
+  }
 }
 
 // ─── Auth middleware ────────────────────────────────────────────────────────

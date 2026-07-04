@@ -12,18 +12,8 @@ static uint32_t lastAlarmLoopMs = 0;
 
 // ─── Check if any sensor in a zone is active ──────────────────────────────
 static bool zoneSensorTripped(uint8_t zoneId) {
-  for (int s = 0; s < TOTAL_SENSORS; s++) {
-    if (config.sensors[s].type == SENSOR_DISABLED) continue;
-    if (!(config.sensors[s].zoneMask & (1U << (zoneId - 1)))) continue;
-    if (sensorStates[s].state == SENSOR_ACTIVE) return true;
-  }
-  // Check external MQTT sensors
-  for (int s = 0; s < MAX_EXT_SENSORS; s++) {
-    if (!config.extSensors[s].enabled) continue;
-    if (!(config.extSensors[s].zoneMask & (1U << (zoneId - 1)))) continue;
-    if (extSensorStates[s].active) return true;
-  }
-  return false;
+  if (zoneId < 1 || zoneId > MAX_ZONES) return false;
+  return zoneSensorActiveCache[zoneId - 1];
 }
 
 // ─── Build a sensor list for the zone (only active sensors) ────────────────
@@ -280,6 +270,17 @@ static void syncRelays() {
       }
       default:
         break;
+    }
+  }
+
+  // Update the fast-exit flag based on actual relay states after processing.
+  // Must reflect reality: only set true if all relays are OFF and we're disarmed.
+  relaysKnownOff = (alarmCtx.globalState == AlarmState::DISARMED);
+  for (int r = 0; r < MAX_RELAYS && relaysKnownOff; r++) {
+    if (relayManualOverride[r]) {
+      relaysKnownOff = !relayManualState[r];  // only OK if override is OFF
+    } else if (relayStates[r]) {
+      relaysKnownOff = false;
     }
   }
 }

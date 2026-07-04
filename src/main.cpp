@@ -116,6 +116,9 @@ void loop() {
   mqttFlushPostConnect();
   mqttStatusLoop();
 
+  // ─── Event log batch flush ────────────────────────────────────────────
+  eventLogFlushIfNeeded();
+
   // ─── Status LED: fast blink during disarming/prealarm, slow blink during alarm ───
   static uint32_t lastLedBlink = 0;
   bool anyWarning = false, anyAlarm = false;

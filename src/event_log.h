@@ -32,4 +32,5 @@ void logSystem(const char* desc);
 void logRelay(const char* desc);
 void logSensor(const char* desc);
 void clearEventLog();
+void eventLogFlushIfNeeded();       // flush pending batch entries (call from loop)
 String getEventLogJson();           // last 30 entries within retention window

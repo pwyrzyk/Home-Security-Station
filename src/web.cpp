@@ -1995,6 +1995,7 @@ void initWebServer() {
       char buf[80];
       snprintf(buf, sizeof(buf), "E%d '%s' -> %s (API)", id, config.extSensors[id-1].name, active ? "ACTIVE" : "IDLE");
       logSensor(buf);
+      updateZoneSensorCache();  // keep zone tripped cache in sync
     }
     req->send(200, "application/json", "{\"ok\":true}");
   });

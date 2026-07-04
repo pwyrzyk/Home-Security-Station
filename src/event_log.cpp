@@ -3,12 +3,19 @@
 #include <time.h>
 #include <ArduinoJson.h>
 
-// ─── Circular buffer ────────────────────────────────────────────────────────
+// ─── Circular buffer (in-memory) ────────────────────────────────────────────
 static EventLogEntry events[EVENT_LOG_MAX_ENTRIES];
 static uint16_t head = 0;    // next write position
 static uint16_t count = 0;   // total entries stored (0..256)
 
-// ─── Forward ────────────────────────────────────────────────────────────────
+// ─── Write-through batch buffer (reduces LittleFS open/close cycles) ────────
+// Instead of open/append/close per entry (which wears flash), we buffer up to
+// 10 entries and flush them together. ALARM events flush immediately.
+#define FLUSH_BATCH_SIZE 10
+static EventLogEntry batchBuf[FLUSH_BATCH_SIZE];
+static uint8_t       batchCount = 0;
+static uint32_t      lastFlushMs = 0;
+
 static uint32_t currentEpoch() {
   time_t t = time(nullptr);
   return (t > 0) ? (uint32_t)t : 0;
@@ -20,12 +27,32 @@ static void writeEntry(const EventLogEntry& entry) {
   if (count < EVENT_LOG_MAX_ENTRIES) count++;
 }
 
-// ─── Persist a single entry to the end of the LittleFS file ────────────────
-static void persistEntry(const EventLogEntry& entry) {
-  File f = LittleFS.open(EVENT_LOG_FILE, "a");   // append
+// ─── Flush buffered entries to LittleFS (single open/append/close) ─────────
+static void flushBatch() {
+  if (batchCount == 0) return;
+  File f = LittleFS.open(EVENT_LOG_FILE, "a");
   if (!f) return;
-  f.write((const uint8_t*)&entry, sizeof(EventLogEntry));
+  f.write((const uint8_t*)batchBuf, batchCount * sizeof(EventLogEntry));
   f.close();
+  batchCount = 0;
+  lastFlushMs = millis();
+}
+
+// ─── Buffer a single entry; flush if batch full or alarm event ─────────────
+static void bufferEntry(const EventLogEntry& entry) {
+  batchBuf[batchCount++] = entry;
+  // Flush immediately on alarm events (critical — must survive crash)
+  // or when batch is full
+  if (entry.type == EVENT_ALARM || batchCount >= FLUSH_BATCH_SIZE) {
+    flushBatch();
+  }
+}
+
+// ─── Called periodically from main loop (every ~10ms) to flush stale ───────
+void eventLogFlushIfNeeded() {
+  if (batchCount > 0 && millis() - lastFlushMs >= 10000) {
+    flushBatch();
+  }
 }
 
 // ─── Load all entries from LittleFS on boot ─────────────────────────────────
@@ -51,6 +78,8 @@ void eventLogInit() {
   memset(events, 0, sizeof(events));
   head = 0;
   count = 0;
+  batchCount = 0;
+  lastFlushMs = 0;
   loadFromLittleFS();
 }
 
@@ -60,7 +89,7 @@ void logAlarm(const char* desc) {
   entry.timestamp = currentEpoch();
   strlcpy(entry.description, desc, sizeof(entry.description));
   writeEntry(entry);
-  persistEntry(entry);
+  bufferEntry(entry);  // will flush immediately (EVENT_ALARM)
 }
 
 void logSystem(const char* desc) {
@@ -69,7 +98,7 @@ void logSystem(const char* desc) {
   entry.timestamp = currentEpoch();
   strlcpy(entry.description, desc, sizeof(entry.description));
   writeEntry(entry);
-  persistEntry(entry);
+  bufferEntry(entry);
 }
 
 void logRelay(const char* desc) {
@@ -78,7 +107,7 @@ void logRelay(const char* desc) {
   entry.timestamp = currentEpoch();
   strlcpy(entry.description, desc, sizeof(entry.description));
   writeEntry(entry);
-  persistEntry(entry);
+  bufferEntry(entry);
 }
 
 void logSensor(const char* desc) {
@@ -87,10 +116,11 @@ void logSensor(const char* desc) {
   entry.timestamp = currentEpoch();
   strlcpy(entry.description, desc, sizeof(entry.description));
   writeEntry(entry);
-  persistEntry(entry);
+  bufferEntry(entry);
 }
 
 void clearEventLog() {
+  flushBatch();  // flush any pending entries first
   memset(events, 0, sizeof(events));
   head = 0;
   count = 0;
