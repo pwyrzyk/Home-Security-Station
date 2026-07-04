@@ -984,7 +984,7 @@ function renderRelays(a){
 <span class="rdot ${on?'on':'off'}"></span>
 <span class="rlabel">${r.name}</span>
 <label class="toggle">
-<input type="checkbox" ${on?'checked':''} onchange="fetch('/api/relay/${r.id}?state='+(this.checked?'ON':'OFF')).then(()=>load())">
+<input type="checkbox" ${on?'checked':''} onchange="toggleRelay(${r.id},this)">
 <span class="toggle-slider"></span>
 </label>
 <label style="margin-top:4px;font-size:10px;display:inline-flex;align-items:center;gap:4px;color:#86868b">
@@ -1497,8 +1497,49 @@ async function uploadFirmware(){
 }
 async function reconnect(){await fetch('/api/reconnect');load();}
 async function restart(){if(confirm('Restart?'))await fetch('/api/restart');}
-async function cmd(url){await fetch(url);load();}
-load();setInterval(load,3000);
+async function cmd(url){await fetch(url);loadFast();setTimeout(load,500);}
+
+// ─── Optimistic relay toggle — updates UI immediately, fires API in background
+async function toggleRelay(id, el) {
+  let on = el.checked;
+  let box = el.closest('.relay-box');
+  if (box) {
+    box.className = 'relay-box ' + (on ? 'on' : 'off');
+    let dot = box.querySelector('.rdot');
+    if (dot) dot.className = 'rdot ' + (on ? 'on' : 'off');
+  }
+  fetch('/api/relay/' + id + '?state=' + (on ? 'ON' : 'OFF'));
+}
+
+// ─── Fast poll: relays, zones, alarm state (~200 bytes JSON) at 1s ──────
+async function loadFast() {
+  try {
+    const r = await fetch('/api/status-light');
+    if (r.status === 401) return;
+    const d = await r.json();
+    data.wifi = d.wifi;
+    data.activeMode = d.activeMode;
+    data.globalState = d.globalState;
+    data.mqttConnected = d.mqttConnected;
+    if (d.relays && data.relays) {
+    d.relays.forEach(r => {
+      const e = data.relays.find(x => x.id === r.id);
+      if (e) e.state = r.state;
+    });
+  }
+    if (d.zones && data.zones) {
+      d.zones.forEach(z => {
+        const e = data.zones.find(x => x.id === z.id);
+        if (e) { e.state = z.state; e.armed = z.armed; e.label = z.label; }
+      });
+    }
+    renderStatusBar();
+    renderModeGrid();
+    if (_authRole === 0) { renderRelays(data.relays); renderZones(data.zones); }
+  } catch (e) {}
+}
+let _fastPollId = setInterval(loadFast, 1000);
+load();let _fullPollId = setInterval(load, 3000);
 </script></body></html>)rawliteral";
 
 // ─── Login page HTML ───────────────────────────────────────────────────────
@@ -2027,6 +2068,39 @@ void initWebServer() {
   server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest *req) {
     if (!requireAuth(req)) return;
     apiStatus(req);
+  });
+
+  // Lightweight status — relays, zones, alarm state only (~200 bytes vs ~3KB)
+  server.on("/api/status-light", HTTP_GET, [](AsyncWebServerRequest *req) {
+    if (!requireAuth(req)) return;
+    JsonDocument doc;
+    doc["wifi"]     = wifiConnected ? "connected" : (apMode ? "ap" : "disconnected");
+    doc["activeMode"]  = alarmModeToHaString(alarmCtx.activeMode);
+    doc["globalState"] = alarmStateToHaString(alarmCtx.globalState);
+    doc["mqttConnected"] = mqtt.connected();
+
+    JsonArray relays = doc["relays"].to<JsonArray>();
+    for (int i = 0; i < MAX_RELAYS; i++) {
+      JsonObject r = relays.add<JsonObject>();
+      r["id"] = i + 1;
+      r["state"] = relayStates[i];
+    }
+
+    JsonArray zones = doc["zones"].to<JsonArray>();
+    for (int i = 0; i < MAX_ZONES; i++) {
+      JsonObject z = zones.add<JsonObject>();
+      z["id"] = i + 1;
+      z["name"] = config.zones[i].name;
+      z["armed"] = zoneStates[i].armed;
+      z["enabled"] = config.zones[i].enabled;
+      z["state"] = zoneAlarmStateStr(zoneStates[i].alarmState);
+      z["label"] = zoneAlarmStateLabel(zoneStates[i].alarmState);
+    }
+
+    String buf;
+    buf.reserve(600);
+    serializeJson(doc, buf);
+    req->send(200, "application/json", buf);
   });
   server.on("/api/sensors", HTTP_GET, [](AsyncWebServerRequest *req) {
     if (!requireAuth(req)) return;
