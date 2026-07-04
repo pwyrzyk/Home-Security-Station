@@ -2,6 +2,7 @@
 #include "zones.h"
 #include "sensors.h"
 #include "event_log.h"
+#include "mqtt.h"
 
 // ─── Helper: check if a sensor is tripped for a given zone ────────────────
 static bool sensorTrippedForZone(uint8_t zoneId, uint8_t& outSensorId, char* outSensorName, size_t nameSize) {
@@ -194,6 +195,19 @@ AlarmMode haCommandToMode(const char* cmd) {
   return AlarmMode::DISARMED;
 }
 
+// Convert HA state string ("armed_home", "disarmed", etc.) back to AlarmMode.
+// Used by the web API /api/mode/set which receives lowercase HA strings.
+AlarmMode haStringToMode(const char* s) {
+  if (!s) return AlarmMode::DISARMED;
+  if (strcmp(s, "disarmed") == 0)            return AlarmMode::DISARMED;
+  if (strcmp(s, "armed_home") == 0)          return AlarmMode::ARMED_HOME;
+  if (strcmp(s, "armed_away") == 0)          return AlarmMode::ARMED_AWAY;
+  if (strcmp(s, "armed_night") == 0)         return AlarmMode::ARMED_NIGHT;
+  if (strcmp(s, "armed_vacation") == 0)      return AlarmMode::ARMED_VACATION;
+  if (strcmp(s, "armed_custom_bypass") == 0) return AlarmMode::ARMED_CUSTOM_BYPASS;
+  return AlarmMode::DISARMED;  // unknown → disarm (safe default)
+}
+
 // ─── updateLastTrigger ─────────────────────────────────────────────────────
 
 void updateLastTrigger(uint8_t zoneId) {
@@ -228,4 +242,30 @@ void updateLastTrigger(uint8_t zoneId) {
   snprintf(buf, sizeof(buf), "Last trigger: zone='%s' sensor='%s'",
            alarmCtx.lastTriggerZoneName, alarmCtx.lastTriggerSensorName);
   logSensor(buf);
+}
+
+// ─── Convenience wrappers: arm/disarm + publish state in one call ──────────
+// Eliminates duplicated publish boilerplate in mqtt.cpp and web.cpp handlers.
+
+bool applyModeAndPublish(AlarmMode mode, const char* source) {
+  if (mode == AlarmMode::DISARMED) {
+    disarmAndPublish(source);
+    return true;
+  }
+  bool ok = armMode(mode, source);
+  if (ok) {
+    alarmCtx.globalState = deriveGlobalAlarmState();
+    publishGlobalAlarmState();
+    publishActiveProfile();
+    publishZoneTopics();
+  }
+  return ok;
+}
+
+void disarmAndPublish(const char* source) {
+  disarmMode(source);
+  alarmCtx.globalState = deriveGlobalAlarmState();
+  publishGlobalAlarmState();
+  publishActiveProfile();
+  publishZoneTopics();
 }

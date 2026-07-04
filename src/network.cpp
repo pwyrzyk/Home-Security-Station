@@ -211,7 +211,14 @@ void wifiStationRetryLoop() {
 
 void initOTA() {
   ArduinoOTA.setPort(OTA_PORT);
-  ArduinoOTA.setPassword(OTA_PASSWORD);
+  // Only enable OTA authentication if a password is configured.
+  // An empty OTA_PASSWORD disables OTA to avoid unauthenticated updates.
+  if (strlen(OTA_PASSWORD) > 0) {
+    ArduinoOTA.setPassword(OTA_PASSWORD);
+  } else {
+    logSystem("OTA disabled — no password configured");
+    return;
+  }
   ArduinoOTA.setHostname(OTA_HOSTNAME);
 
   ArduinoOTA.onStart([]() {});

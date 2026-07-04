@@ -409,6 +409,21 @@ void alarmLoop() {
   AlarmState currentState = deriveGlobalAlarmState();
 
   if (currentState != lastGlobalState) {
+    // ─── Clear manual relay overrides on any state transition ───────────
+    // This ensures automatic siren/alarm relay control resumes for the new
+    // alarm cycle. Without this, a manual relay toggle (web/MQTT) would
+    // permanently bypass syncRelays() automatic control for that relay.
+    bool anyOverrideCleared = false;
+    for (int r = 0; r < MAX_RELAYS; r++) {
+      if (relayManualOverride[r]) {
+        relayManualOverride[r] = false;
+        anyOverrideCleared = true;
+      }
+    }
+    if (anyOverrideCleared) {
+      logRelay("Manual override cleared on state transition");
+    }
+
     // On entering TRIGGERED, capture last trigger info
     if (currentState == AlarmState::TRIGGERED && lastGlobalState != AlarmState::TRIGGERED) {
       // Find the zone that just entered ALARM

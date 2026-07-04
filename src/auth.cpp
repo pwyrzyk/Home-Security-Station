@@ -6,8 +6,11 @@
 // ─── Session storage ───────────────────────────────────────────────────────
 #define MAX_SESSIONS 4
 static AuthSession sessions[MAX_SESSIONS];
-static uint32_t lastPurgeSec = 0;
-static uint32_t fakeToRealOffset = 0;  // added to millis-based timestamps after NTP sync
+
+// Session timeout in milliseconds (derived from SESSION_TIMEOUT_SEC)
+static const uint32_t SESSION_TIMEOUT_MS = (uint32_t)SESSION_TIMEOUT_SEC * 1000UL;
+// Lockout duration in milliseconds (derived from LOCKOUT_DURATION_SEC)
+static const uint32_t LOCKOUT_DURATION_MS = (uint32_t)LOCKOUT_DURATION_SEC * 1000UL;
 
 // ─── IP rate-limit tracking ─────────────────────────────────────────────────
 static IpTracker ipTrackers[MAX_TRACKED_IPS];
@@ -16,13 +19,13 @@ static uint8_t ipTrackerWriteIdx = 0;
 // ─── Session secret (generated once per boot from hardware RNG) ────────────
 static uint8_t sessionSecret[16];
 
-// ─── Utility: get current Unix timestamp (best effort) ─────────────────────
-static uint32_t currentUnixTime() {
-    if (lastNtpTime > 0) {
-        uint32_t elapsed = millis() / 1000;
-        return lastNtpTime + elapsed;
-    }
-    return millis() / 1000;
+// ─── Monotonic time helper ─────────────────────────────────────────────────
+// All session/IP-tracking timestamps use millis() directly. This avoids the
+// discontinuity that occurs when NTP syncs and time(nullptr) jumps from a
+// small fake value to the real Unix epoch. millis() is monotonic and wraps
+// only after ~49.7 days, which is handled correctly by unsigned subtraction.
+static inline uint32_t nowMs() {
+    return millis();
 }
 
 // ─── SHA-256 hashing via mbedtls ──────────────────────────────────────────
@@ -122,8 +125,8 @@ String createSession(const char *username, uint8_t role) {
             slot = i;
             break;
         }
-        if (sessions[i].lastActivity < oldestTime) {
-            oldestTime = sessions[i].lastActivity;
+        if (sessions[i].lastActivityMs < oldestTime) {
+            oldestTime = sessions[i].lastActivityMs;
             slot = i;
         }
     }
@@ -140,23 +143,25 @@ String createSession(const char *username, uint8_t role) {
     }
     hex[SESSION_ID_LENGTH] = '\0';
 
+    uint32_t now = nowMs();
     strlcpy(sessions[slot].id, hex, sizeof(sessions[slot].id));
     if (username) strlcpy(sessions[slot].username, username, sizeof(sessions[slot].username));
-    sessions[slot].role         = role;
-    sessions[slot].createdAt    = currentUnixTime();
-    sessions[slot].lastActivity = currentUnixTime();
-    sessions[slot].active       = true;
+    sessions[slot].role            = role;
+    sessions[slot].createdAtMs     = now;
+    sessions[slot].lastActivityMs  = now;
+    sessions[slot].active          = true;
 
     return String(hex);
 }
 
 bool validateSession(const char *token) {
     if (!token || strlen(token) != SESSION_ID_LENGTH) return false;
-    uint32_t now = currentUnixTime();
+    uint32_t now = nowMs();
     for (int i = 0; i < MAX_SESSIONS; i++) {
         if (!sessions[i].active) continue;
         if (strcmp(sessions[i].id, token) == 0) {
-            if (now - sessions[i].lastActivity > SESSION_TIMEOUT_SEC) {
+            // Unsigned subtraction handles millis() wrap-around correctly
+            if (now - sessions[i].lastActivityMs > SESSION_TIMEOUT_MS) {
                 sessions[i].active = false;
                 return false;
             }
@@ -201,19 +206,20 @@ void destroySession(const char *token) {
 
 void touchSession(const char *token) {
     if (!token) return;
+    uint32_t now = nowMs();
     for (int i = 0; i < MAX_SESSIONS; i++) {
         if (sessions[i].active && strcmp(sessions[i].id, token) == 0) {
-            sessions[i].lastActivity = currentUnixTime();
+            sessions[i].lastActivityMs = now;
             return;
         }
     }
 }
 
 void purgeExpiredSessions() {
-    uint32_t now = currentUnixTime();
+    uint32_t now = nowMs();
     for (int i = 0; i < MAX_SESSIONS; i++) {
         if (!sessions[i].active) continue;
-        if (now - sessions[i].lastActivity > SESSION_TIMEOUT_SEC) {
+        if (now - sessions[i].lastActivityMs > SESSION_TIMEOUT_MS) {
             sessions[i].active = false;
             memset(sessions[i].id, 0, sizeof(sessions[i].id));
         }
@@ -221,20 +227,27 @@ void purgeExpiredSessions() {
 }
 
 // ─── Rate limiting per IP ──────────────────────────────────────────────────
+// Returns retry_after_sec (0 = allowed). Uses monotonic millis() for lockout.
+// Wrap-safe: lockoutUntilMs is set as (now + duration); the elapsed time is
+// computed with unsigned subtraction so a 49.7-day millis() rollover is fine.
 int checkRateLimit(const String &ip) {
+    uint32_t now = nowMs();
     for (int i = 0; i < MAX_TRACKED_IPS; i++) {
         if (ipTrackers[i].ip[0] == '\0') continue;
         if (strcmp(ipTrackers[i].ip, ip.c_str()) == 0) {
-            if (ipTrackers[i].lockoutUntil > 0) {
-                uint32_t now = currentUnixTime();
-                if (now < ipTrackers[i].lockoutUntil) {
-                    return ipTrackers[i].lockoutUntil - now;
-                }
-                ipTrackers[i].lockoutUntil = 0;
+            if (ipTrackers[i].lockoutUntilMs == 0) return 0;  // not locked
+            // Elapsed since lockout start; compare against LOCKOUT_DURATION_MS.
+            // We store the absolute expiry (lockoutUntilMs = now + duration),
+            // so "still locked" means (lockoutUntilMs - now) is in the future.
+            uint32_t elapsed = now - ipTrackers[i].lastAttemptMs;
+            if (elapsed >= LOCKOUT_DURATION_MS) {
+                // Lockout expired
+                ipTrackers[i].lockoutUntilMs = 0;
                 ipTrackers[i].failCount = 0;
                 return 0;
             }
-            return 0;
+            uint32_t remainingMs = LOCKOUT_DURATION_MS - elapsed;
+            return (int)((remainingMs + 999) / 1000);  // round up to seconds
         }
     }
     return 0;
@@ -263,14 +276,14 @@ void recordFailedAttempt(const String &ip) {
         slot = ipTrackerWriteIdx;
         strlcpy(ipTrackers[slot].ip, ip.c_str(), sizeof(ipTrackers[slot].ip));
         ipTrackers[slot].failCount = 0;
-        ipTrackers[slot].lockoutUntil = 0;
+        ipTrackers[slot].lockoutUntilMs = 0;
     }
 
     ipTrackers[slot].failCount++;
-    ipTrackers[slot].lastAttemptMs = millis();
+    ipTrackers[slot].lastAttemptMs = nowMs();
 
     if (ipTrackers[slot].failCount >= MAX_FAILED_ATTEMPTS) {
-        ipTrackers[slot].lockoutUntil = currentUnixTime() + LOCKOUT_DURATION_SEC;
+        ipTrackers[slot].lockoutUntilMs = nowMs() + LOCKOUT_DURATION_MS;
         char logBuf[100];
         snprintf(logBuf, sizeof(logBuf), "IP %s locked out for %d min after %d failed logins",
                  ip.c_str(), LOCKOUT_DURATION_SEC / 60, ipTrackers[slot].failCount);
@@ -283,7 +296,7 @@ void resetFailedAttempts(const String &ip) {
         if (ipTrackers[i].ip[0] == '\0') continue;
         if (strcmp(ipTrackers[i].ip, ip.c_str()) == 0) {
             ipTrackers[i].failCount = 0;
-            ipTrackers[i].lockoutUntil = 0;
+            ipTrackers[i].lockoutUntilMs = 0;
             return;
         }
     }
@@ -299,42 +312,12 @@ String getClientIP(AsyncWebServerRequest *req) {
     return req->client()->remoteIP().toString();
 }
 
-// ─── NTP sync callback — adjusts session timestamps when real time arrives ─
-// Called from syncNTP() when the system transitions from millis-based fake
-// clock to real Unix epoch time. Prevents sessions from instantly expiring
-// due to the timestamp discontinuity.
+// ─── NTP sync callback ─────────────────────────────────────────────────────
+// With monotonic millis()-based session clocks, NTP sync no longer causes a
+// timestamp discontinuity. This callback is now a no-op but kept for API
+// compatibility with network.cpp.
 void onNtpSynced(uint32_t realEpoch) {
-  // Nothing to do if no sessions or no fake clock in use
-  if (lastNtpTime == 0) return;
-
-  // Compute the fake timestamp at the moment of NTP sync
-  uint32_t fakeAtSync = millis() / 1000;
-
-  // Offset: what to add to a fake timestamp to get a real epoch
-  // (realEpoch - fakeAtSync), clamped to avoid underflow if somehow
-  // realEpoch < fakeAtSync (should never happen in practice)
-  int64_t offset = (int64_t)realEpoch - (int64_t)fakeAtSync;
-  if (offset <= 0) return;  // nothing to adjust
-
-  unsigned adjusted = 0;
-  for (int i = 0; i < MAX_SESSIONS; i++) {
-    if (!sessions[i].active) continue;
-    // Only adjust timestamps that were set before NTP sync.
-    // A crude heuristic: timestamps < 100000 (2001 epoch) are definitely
-    // from the fake clock. Real Unix timestamps are always > 1.7e9 in 2024+.
-    if (sessions[i].createdAt < 100000) {
-      sessions[i].createdAt    += (uint32_t)offset;
-      if (sessions[i].lastActivity < 100000) {
-        sessions[i].lastActivity += (uint32_t)offset;
-      }
-      adjusted++;
-    }
-  }
-  if (adjusted > 0) {
-    char buf[70];
-    snprintf(buf, sizeof(buf), "NTP synced: adjusted %u session timestamps", adjusted);
-    logSystem(buf);
-  }
+    (void)realEpoch;  // no adjustment needed — sessions use millis()
 }
 
 // ─── Auth middleware ────────────────────────────────────────────────────────

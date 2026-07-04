@@ -15,12 +15,14 @@
 #define SESSION_ID_LENGTH        32
 
 // ─── Session structure ──────────────────────────────────────────────────────
+// NOTE: timestamps are monotonic millis() (not Unix epoch) to avoid the
+// discontinuity when NTP syncs. Session timeout is compared in milliseconds.
 struct AuthSession {
     char     id[SESSION_ID_LENGTH + 1];   // hex token
     char     username[16];                // logged-in username
     uint8_t  role;                        // 0=admin, 1=operator
-    uint32_t createdAt;                   // unix timestamp when created
-    uint32_t lastActivity;                // unix timestamp of last request
+    uint32_t createdAtMs;                 // monotonic millis() when created
+    uint32_t lastActivityMs;              // monotonic millis() of last request
     bool     active;
 };
 
@@ -28,7 +30,7 @@ struct AuthSession {
 struct IpTracker {
     char     ip[16];
     uint8_t  failCount;
-    uint32_t lockoutUntil;               // unix timestamp, 0 = not locked
+    uint32_t lockoutUntilMs;             // monotonic millis(), 0 = not locked
     uint32_t lastAttemptMs;              // millis() of last attempt
 };
 

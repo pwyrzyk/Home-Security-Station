@@ -43,18 +43,20 @@
 #endif
 
 // ─── Network defaults ──────────────────────────────────────────────────────
-#define DEFAULT_WIFI_SSID  "Jasminowa_5"
-#define DEFAULT_WIFI_PASS  "vader001"
-#define DEFAULT_MQTT_SERVER "192.168.1.20"
+// NOTE: These are factory fallbacks only. Real credentials are configured via
+// the web UI and persisted to EEPROM. Do NOT hardcode real secrets here.
+#define DEFAULT_WIFI_SSID  ""
+#define DEFAULT_WIFI_PASS  ""
+#define DEFAULT_MQTT_SERVER ""
 #define DEFAULT_MQTT_PORT   1883
 #define DEFAULT_MQTT_USER   ""
 #define DEFAULT_MQTT_PASS   ""
 
 #define AP_SSID_PREFIX "Alarm-AP-"
-#define AP_PASS        "12345678"
+#define AP_PASS        "alarm123"   // 8-char minimum for WPA2; change via UI
 
 #define OTA_PORT    3232
-#define OTA_PASSWORD "admin"
+#define OTA_PASSWORD ""             // empty = OTA disabled; set via UI/build flags
 #define OTA_HOSTNAME "alarm"
 
 #define NTP_SERVER      "pool.ntp.org"

@@ -17,6 +17,8 @@ AsyncWebServer server(HTTP_PORT);
 // ─── Deferred action flags (set by async handlers, executed in webLoop) ───
 bool pendingRestart  = false;
 bool pendingReconnect = false;
+PendingExtSensorTrigger pendingExtTrigger = {false, 0, false};
+PendingRelayCommand     pendingRelayCmd   = {false, 0, false};
 
 void webLoop() {
   if (pendingRestart) {
@@ -29,6 +31,40 @@ void webLoop() {
     WiFi.disconnect();
     delay(500);
     ensureWiFiMode();
+  }
+
+  // ─── Deferred external-sensor trigger (SHOULD #7) ─────────────────────
+  // Applied from main loop to avoid racing sensorsLoop()/alarmLoop().
+  if (pendingExtTrigger.pending) {
+    uint8_t id = pendingExtTrigger.id;
+    bool active = pendingExtTrigger.active;
+    pendingExtTrigger.pending = false;
+    if (id >= 1 && id <= MAX_EXT_SENSORS) {
+      bool wasActive = extSensorStates[id - 1].active;
+      extSensorStates[id - 1].active = active;
+      extSensorStates[id - 1].lastChangeMs = millis();
+      if (active != wasActive) {
+        char buf[80];
+        snprintf(buf, sizeof(buf), "E%d '%s' -> %s (API)", id,
+                 config.extSensors[id - 1].name, active ? "ACTIVE" : "IDLE");
+        logSensor(buf);
+        updateZoneSensorCache();  // keep zone tripped cache in sync
+      }
+    }
+  }
+
+  // ─── Deferred relay command (SHOULD #7) ───────────────────────────────
+  // Applied from main loop to avoid racing syncRelays() in alarmLoop().
+  if (pendingRelayCmd.pending) {
+    uint8_t id = pendingRelayCmd.id;
+    bool on = pendingRelayCmd.on;
+    pendingRelayCmd.pending = false;
+    if (id >= 1 && id <= MAX_RELAYS) {
+      uint8_t idx = id - 1;
+      relayManualOverride[idx] = true;
+      relayManualState[idx] = on;
+      setRelay(idx, on);
+    }
   }
 }
 
@@ -316,44 +352,19 @@ static void apiModeSet(AsyncWebServerRequest *req) {
     return;
   }
 
-  if (modeArg == "disarmed") {
-    disarmMode("web user");
-    alarmCtx.globalState = deriveGlobalAlarmState();
-    publishGlobalAlarmState();
-    publishActiveProfile();
-    publishZoneTopics();
-  } else if (modeArg == "armed_home") {
-    armMode(AlarmMode::ARMED_HOME, "web user");
-    alarmCtx.globalState = deriveGlobalAlarmState();
-    publishGlobalAlarmState();
-    publishActiveProfile();
-    publishZoneTopics();
-  } else if (modeArg == "armed_away") {
-    armMode(AlarmMode::ARMED_AWAY, "web user");
-    alarmCtx.globalState = deriveGlobalAlarmState();
-    publishGlobalAlarmState();
-    publishActiveProfile();
-    publishZoneTopics();
-  } else if (modeArg == "armed_night") {
-    armMode(AlarmMode::ARMED_NIGHT, "web user");
-    alarmCtx.globalState = deriveGlobalAlarmState();
-    publishGlobalAlarmState();
-    publishActiveProfile();
-    publishZoneTopics();
-  } else if (modeArg == "armed_vacation") {
-    armMode(AlarmMode::ARMED_VACATION, "web user");
-    alarmCtx.globalState = deriveGlobalAlarmState();
-    publishGlobalAlarmState();
-    publishActiveProfile();
-    publishZoneTopics();
-  } else if (modeArg == "armed_custom_bypass") {
-    armMode(AlarmMode::ARMED_CUSTOM_BYPASS, "web user");
-    alarmCtx.globalState = deriveGlobalAlarmState();
-    publishGlobalAlarmState();
-    publishActiveProfile();
-    publishZoneTopics();
-  } else {
+  // Convert the HA-style string to AlarmMode and apply via the shared helper.
+  // This replaces 6 duplicated armMode/disarmMode + publish blocks.
+  AlarmMode mode = haStringToMode(modeArg.c_str());
+  if (mode == AlarmMode::DISARMED && modeArg != "disarmed") {
+    // haStringToMode returns DISARMED for unknown strings too — reject them
     req->send(400, "application/json", "{\"error\":\"unknown mode\"}");
+    return;
+  }
+
+  bool ok = applyModeAndPublish(mode, "web user");
+  if (!ok) {
+    // armMode rejected (e.g. mode profile not defined / no zones)
+    req->send(400, "application/json", "{\"error\":\"arm_rejected\"}");
     return;
   }
 
@@ -361,16 +372,17 @@ static void apiModeSet(AsyncWebServerRequest *req) {
 }
 
 static void apiRelayCommand(AsyncWebServerRequest *req) {
-  String path = req->url();
+String path = req->url();
   int lastSlash = path.lastIndexOf('/');
   int relayId   = path.substring(lastSlash + 1).toInt();
   String state  = req->arg("state");
   if (relayId >= 1 && relayId <= MAX_RELAYS) {
     bool on = (state == "ON" || state == "1" || state == "true");
-    uint8_t idx = relayId - 1;
-    relayManualOverride[idx] = true;
-    relayManualState[idx] = on;
-    setRelay(idx, on);
+    // SHOULD #7: defer the mutation to webLoop() to avoid racing syncRelays()
+    // in alarmLoop() on the async TCP task.
+    pendingRelayCmd.pending = true;
+    pendingRelayCmd.id      = (uint8_t)relayId;
+    pendingRelayCmd.on      = on;
   }
   req->send(200, "application/json", "{\"ok\":true}");
 }
@@ -1502,7 +1514,12 @@ async function uploadFirmware(){
   if(!file){ document.getElementById('otaMsg').textContent='Please select a .bin file.'; return; }
   if(!file.name.endsWith('.bin')){ document.getElementById('otaMsg').textContent='File must be a .bin firmware image.'; return; }
   document.getElementById('otaMsg').textContent='Uploading... '+Math.round(file.size/1024)+' kB';
-  const r=await fetch('/api/ota',{method:'POST',body:file});
+  // Use multipart/form-data — ESPAsyncWebServer's upload handler requires it
+  // (a raw body never triggers the multipart parser, so handleOTAUpload is
+  // never called and the request hangs until timeout).
+  const fd=new FormData();
+  fd.append('firmware',file,file.name);
+  const r=await fetch('/api/ota',{method:'POST',body:fd});
   if(r.ok){
     document.getElementById('otaMsg').textContent='Firmware flashed successfully. Device is restarting...';
   } else {
@@ -2034,6 +2051,8 @@ void initWebServer() {
     handleOTAUpload);
 
   // External sensor trigger (for testing / API integration) — must be before generic ext sensors
+  // SHOULD #7: defer the actual state mutation to webLoop() to avoid racing
+  // sensorsLoop()/alarmLoop() on the async TCP task.
   server.on("/api/extsensors/trigger", HTTP_GET, [](AsyncWebServerRequest *req) {
     if (!requireAuth(req)) return;
     int id = req->arg("id").toInt();
@@ -2043,15 +2062,9 @@ void initWebServer() {
       return;
     }
     bool active = (state == "active" || state == "1" || state == "on");
-    bool wasActive = extSensorStates[id - 1].active;
-    extSensorStates[id - 1].active = active;
-    extSensorStates[id - 1].lastChangeMs = millis();
-    if (active != wasActive) {
-      char buf[80];
-      snprintf(buf, sizeof(buf), "E%d '%s' -> %s (API)", id, config.extSensors[id-1].name, active ? "ACTIVE" : "IDLE");
-      logSensor(buf);
-      updateZoneSensorCache();  // keep zone tripped cache in sync
-    }
+    pendingExtTrigger.pending = true;
+    pendingExtTrigger.id      = (uint8_t)id;
+    pendingExtTrigger.active  = active;
     req->send(200, "application/json", "{\"ok\":true}");
   });
 
@@ -2172,6 +2185,7 @@ void initWebServer() {
 
   server.on("/api/eventlog", HTTP_GET, [](AsyncWebServerRequest *req) {
     if (!requireAuth(req)) return;
+    if (!checkHeap(req)) return;  // getEventLogJson() can build ~3KB JSON
     req->send(200, "application/json", getEventLogJson());
   });
 

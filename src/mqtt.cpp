@@ -21,6 +21,64 @@ static bool     mqttPostConnect = false;
 static bool     mqttLoopRan      = false;
 static uint32_t lastStatusPubMs = 0;
 
+// ─── Deferred publish flags (set in callback, flushed in mqttStatusLoop) ───
+// Publishing from inside mqttCallback can collide with PubSubClient buffers.
+// Instead, handlers set these flags and the actual publish happens in loop().
+static bool pendingRelayStatusPub = false;
+
+// ─── Incremental status publishing (SHOULD #10) ────────────────────────────
+// Instead of publishing ~40 topics every 10s in a burst, we track the
+// last-published value for each topic and only republish on change.
+// A full publish is still done on connect (mqttPostConnect) and when a
+// deferred relay-status publish is requested.
+
+struct CachedString {
+  char value[24];
+  bool valid;
+};
+
+// Cache for string-valued topics
+static CachedString cacheGlobalState   = {"", false};
+static CachedString cacheActiveProfile = {"", false};
+static CachedString cacheWifiStatus    = {"", false};
+static char         cacheRssi[8]       = {0};
+
+// Per-zone cache
+static CachedString cacheZoneArmed[MAX_ZONES]   = {};
+static CachedString cacheZoneState[MAX_ZONES]   = {};
+
+// Per-sensor cache
+static CachedString cacheSensorState[TOTAL_SENSORS] = {};
+
+// Per-relay cache
+static CachedString cacheRelay[MAX_RELAYS] = {};
+
+// Per-digital-input cache
+static CachedString cacheDin[MAX_DINPUTS] = {};
+
+static bool cacheEq(const CachedString &c, const char *v) {
+  return c.valid && strcmp(c.value, v) == 0;
+}
+
+static void cacheSet(CachedString &c, const char *v) {
+  strlcpy(c.value, v, sizeof(c.value));
+  c.valid = true;
+}
+
+static void invalidateAllCache() {
+  cacheGlobalState.valid   = false;
+  cacheActiveProfile.valid = false;
+  cacheWifiStatus.valid    = false;
+  cacheRssi[0] = 0;
+  for (int i = 0; i < MAX_ZONES; i++) {
+    cacheZoneArmed[i].valid = false;
+    cacheZoneState[i].valid = false;
+  }
+  for (int i = 0; i < TOTAL_SENSORS; i++) cacheSensorState[i].valid = false;
+  for (int i = 0; i < MAX_RELAYS; i++) cacheRelay[i].valid = false;
+  for (int i = 0; i < MAX_DINPUTS; i++) cacheDin[i].valid = false;
+}
+
 void mqttApplyServerConfig() {
   mqtt.setServer(config.mqttServer, config.mqttPort);
 }
@@ -56,6 +114,7 @@ void connectMQTT() {
     mqttBackoff      = 1000;
     mqttPostConnect  = true;
     mqttLoopRan      = false;
+    invalidateAllCache();  // force full publish on reconnect
     char buf[80];
     snprintf(buf, sizeof(buf), "MQTT connected to %s", config.mqttServer);
     logSystem(buf);
@@ -82,13 +141,6 @@ void mqttFlushPostConnect() {
   // Drain retained MQTT messages delivered after subscribe
   mqtt.loop();
 
-  // Only disarm on the very first connect after boot (not on every reconnect)
-  static bool bootDisarmDone = false;
-  if (!bootDisarmDone) {
-    bootDisarmDone = true;
-    // State is already restored by restoreArmedState() in main setup
-  }
-
   // Clear any stale retained command on /cmd/mode so future reconnects
   // don't re-deliver it
   mqtt.publish((mqttBase + "/cmd/mode").c_str(), "", true);
@@ -96,19 +148,27 @@ void mqttFlushPostConnect() {
   pub("status/running", "true");
   haPublishAllDiscoveries();
   logSystem("HA autodiscovery published");
-  publishStatus();
+  publishStatus();  // full publish (cache was invalidated)
 }
 
 // ─── Global state publishing ───────────────────────────────────────────────
 
 void publishGlobalAlarmState() {
   if (!mqtt.connected()) return;
-  pub("state", alarmStateToHaString(alarmCtx.globalState));
+  const char *s = alarmStateToHaString(alarmCtx.globalState);
+  if (!cacheEq(cacheGlobalState, s)) {
+    pub("state", s);
+    cacheSet(cacheGlobalState, s);
+  }
 }
 
 void publishActiveProfile() {
   if (!mqtt.connected()) return;
-  pub("meta/active_profile", alarmModeToHaString(alarmCtx.activeMode));
+  const char *s = alarmModeToHaString(alarmCtx.activeMode);
+  if (!cacheEq(cacheActiveProfile, s)) {
+    pub("meta/active_profile", s);
+    cacheSet(cacheActiveProfile, s);
+  }
 }
 
 void publishLastTriggerMeta() {
@@ -145,8 +205,16 @@ void publishZoneTopics() {
   for (uint8_t z = 1; z <= MAX_ZONES; z++) {
     uint8_t idx = z - 1;
     String base = "zones/" + String(z);
-    pub(base + "/armed", zoneStates[idx].armed ? "true" : "false");
-    pub(base + "/state", zoneAlarmStateStr(zoneStates[idx].alarmState));
+    String armed = zoneStates[idx].armed ? "true" : "false";
+    String state = zoneAlarmStateStr(zoneStates[idx].alarmState);
+    if (!cacheEq(cacheZoneArmed[idx], armed.c_str())) {
+      pub(base + "/armed", armed);
+      cacheSet(cacheZoneArmed[idx], armed.c_str());
+    }
+    if (!cacheEq(cacheZoneState[idx], state.c_str())) {
+      pub(base + "/state", state);
+      cacheSet(cacheZoneState[idx], state.c_str());
+    }
   }
 }
 
@@ -166,43 +234,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int len) {
     cmd.trim();
     cmd.toUpperCase();
 
-    if (cmd == "DISARM") {
-      disarmMode("MQTT");
-      alarmCtx.globalState = deriveGlobalAlarmState();
-      publishGlobalAlarmState();
-      publishActiveProfile();
-      publishZoneTopics();
-    } else if (cmd == "ARM_HOME") {
-      armMode(AlarmMode::ARMED_HOME, "MQTT");
-      alarmCtx.globalState = deriveGlobalAlarmState();
-      publishGlobalAlarmState();
-      publishActiveProfile();
-      publishZoneTopics();
-    } else if (cmd == "ARM_AWAY") {
-      armMode(AlarmMode::ARMED_AWAY, "MQTT");
-      alarmCtx.globalState = deriveGlobalAlarmState();
-      publishGlobalAlarmState();
-      publishActiveProfile();
-      publishZoneTopics();
-    } else if (cmd == "ARM_NIGHT") {
-      armMode(AlarmMode::ARMED_NIGHT, "MQTT");
-      alarmCtx.globalState = deriveGlobalAlarmState();
-      publishGlobalAlarmState();
-      publishActiveProfile();
-      publishZoneTopics();
-    } else if (cmd == "ARM_VACATION") {
-      armMode(AlarmMode::ARMED_VACATION, "MQTT");
-      alarmCtx.globalState = deriveGlobalAlarmState();
-      publishGlobalAlarmState();
-      publishActiveProfile();
-      publishZoneTopics();
-    } else if (cmd == "ARM_CUSTOM_BYPASS") {
-      armMode(AlarmMode::ARMED_CUSTOM_BYPASS, "MQTT");
-      alarmCtx.globalState = deriveGlobalAlarmState();
-      publishGlobalAlarmState();
-      publishActiveProfile();
-      publishZoneTopics();
-    }
+    applyModeAndPublish(haCommandToMode(cmd.c_str()), "MQTT");
     return;
   }
 
@@ -237,7 +269,10 @@ void mqttCallback(char* topic, byte* payload, unsigned int len) {
       relayManualOverride[idx] = true;
       relayManualState[idx] = on;
       setRelay(idx, on);
-      publishStatus();
+      // Defer the status publish — publishing ~40 topics from inside the
+      // callback can collide with PubSubClient's send buffer. The flag is
+      // serviced in mqttStatusLoop().
+      pendingRelayStatusPub = true;
     }
     return;
   }
@@ -249,14 +284,26 @@ static void onZoneChangeHandler(uint8_t zoneId) {
   if (!mqtt.connected()) return;
   uint8_t idx = zoneId - 1;
   String base = "zones/" + String(zoneId);
-  pub(base + "/armed", zoneStates[idx].armed ? "true" : "false");
-  pub(base + "/state", zoneAlarmStateStr(zoneStates[idx].alarmState));
+  String armed = zoneStates[idx].armed ? "true" : "false";
+  String state = zoneAlarmStateStr(zoneStates[idx].alarmState);
+  if (!cacheEq(cacheZoneArmed[idx], armed.c_str())) {
+    pub(base + "/armed", armed);
+    cacheSet(cacheZoneArmed[idx], armed.c_str());
+  }
+  if (!cacheEq(cacheZoneState[idx], state.c_str())) {
+    pub(base + "/state", state);
+    cacheSet(cacheZoneState[idx], state.c_str());
+  }
 }
 
 // ─── Global state change handler ───────────────────────────────────────────
 
 static void onGlobalChangeHandler(AlarmState newState) {
-  pub("state", alarmStateToHaString(newState));
+  const char *s = alarmStateToHaString(newState);
+  if (!cacheEq(cacheGlobalState, s)) {
+    pub("state", s);
+    cacheSet(cacheGlobalState, s);
+  }
 
   if (newState == AlarmState::TRIGGERED) {
     publishLastTriggerMeta();
@@ -264,13 +311,15 @@ static void onGlobalChangeHandler(AlarmState newState) {
 }
 
 // ─── Full status publishing (periodic 10s + on-connect) ────────────────────
+// Incremental: only topics whose value changed since last publish are sent.
+// A full publish happens on reconnect (cache invalidated in connectMQTT).
 
 void publishStatus() {
   if (!mqtt.connected()) return;
 
   // Global alarm state
-  pub("state", alarmStateToHaString(alarmCtx.globalState));
-  pub("meta/active_profile", alarmModeToHaString(alarmCtx.activeMode));
+  publishGlobalAlarmState();
+  publishActiveProfile();
 
   // Per-zone topics
   publishZoneTopics();
@@ -279,22 +328,42 @@ void publishStatus() {
   for (int s = 0; s < TOTAL_SENSORS; s++) {
     if (config.sensors[s].type == SENSOR_DISABLED) continue;
     String base = "sensors/" + String(s + 1);
-    pub(base + "/state", sensorStateStr(sensorStates[s].state));
+    String state = sensorStateStr(sensorStates[s].state);
+    if (!cacheEq(cacheSensorState[s], state.c_str())) {
+      pub(base + "/state", state);
+      cacheSet(cacheSensorState[s], state.c_str());
+    }
   }
 
   // Relays
   for (int r = 0; r < MAX_RELAYS; r++) {
-    pub("status/relay/" + String(r + 1), relayStates[r] ? "ON" : "OFF");
+    String state = relayStates[r] ? "ON" : "OFF";
+    if (!cacheEq(cacheRelay[r], state.c_str())) {
+      pub("status/relay/" + String(r + 1), state);
+      cacheSet(cacheRelay[r], state.c_str());
+    }
   }
 
   // Digital inputs
   for (int d = 0; d < MAX_DINPUTS; d++) {
-    pub("status/din/" + String(d + 1), dinputStates[d] ? "ON" : "OFF");
+    String state = dinputStates[d] ? "ON" : "OFF";
+    if (!cacheEq(cacheDin[d], state.c_str())) {
+      pub("status/din/" + String(d + 1), state);
+      cacheSet(cacheDin[d], state.c_str());
+    }
   }
 
   // System
-  pub("status/wifi", wifiConnected ? "connected" : (apMode ? "ap" : "disconnected"));
-  pub("status/rssi", wifiConnected ? String(WiFi.RSSI()) : "0");
+  String wifi = wifiConnected ? "connected" : (apMode ? "ap" : "disconnected");
+  if (!cacheEq(cacheWifiStatus, wifi.c_str())) {
+    pub("status/wifi", wifi);
+    cacheSet(cacheWifiStatus, wifi.c_str());
+  }
+  String rssi = wifiConnected ? String(WiFi.RSSI()) : "0";
+  if (strcmp(cacheRssi, rssi.c_str()) != 0) {
+    pub("status/rssi", rssi);
+    strlcpy(cacheRssi, rssi.c_str(), sizeof(cacheRssi));
+  }
 
   // Meta
   publishLastTriggerMeta();
@@ -304,10 +373,19 @@ void publishStatus() {
 
 void mqttStatusLoop() {
   if (!mqtt.connected()) return;
+
+  // Service deferred publish requests from mqttCallback (SHOULD #9)
+  if (pendingRelayStatusPub) {
+    pendingRelayStatusPub = false;
+    publishStatus();
+    lastStatusPubMs = millis();  // reset periodic timer after a burst
+    return;
+  }
+
   uint32_t now = millis();
   if (now - lastStatusPubMs < 10000) return;  // every 10s
   lastStatusPubMs = now;
-  publishStatus();
+  publishStatus();  // incremental — only changed topics
 }
 
 // ─── Wire up callbacks ─────────────────────────────────────────────────────

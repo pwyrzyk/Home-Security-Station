@@ -17,6 +17,15 @@ AlarmState deriveGlobalAlarmState();
 const char* alarmStateToHaString(AlarmState s);
 const char* alarmModeToHaString(AlarmMode m);
 AlarmMode haCommandToMode(const char* cmd);
+AlarmMode haStringToMode(const char* s);  // "disarmed", "armed_home", etc.
+
+// ─── Convenience: arm/disarm + publish state in one call ───────────────────
+// Eliminates duplicated publish boilerplate in mqtt.cpp and web.cpp handlers.
+// Returns true if the mode was applied successfully.
+bool applyModeAndPublish(AlarmMode mode, const char* source);
+
+// ─── Convenience: disarm + publish state in one call ───────────────────────
+void disarmAndPublish(const char* source);
 
 // ─── Last trigger tracking ─────────────────────────────────────────────────
 // Called by the alarm engine when a zone enters ZONE_ALARM.
