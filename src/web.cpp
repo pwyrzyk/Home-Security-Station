@@ -585,18 +585,103 @@ small{color:var(--muted);font-size:12px}
 .nav-right{margin-left:auto;display:flex;align-items:center;gap:10px;padding-right:14px}
 .nav-user{display:flex;align-items:center;gap:5px;font-size:13px;font-weight:500;color:var(--fg);white-space:nowrap}
 .nav-user .user-icon{font-size:15px;opacity:0.6}
-.status-bar{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 18px;margin-bottom:16px;display:flex;align-items:center;gap:16px;font-size:12px;color:var(--muted);flex-wrap:wrap}
-.status-bar .stat-dot{width:8px;height:8px;border-radius:50%}
-.status-bar .stat-dot.ok{background:var(--green)}
-.status-bar .stat-dot.warn{background:var(--yellow)}
-.status-bar .stat-dot.bad{background:var(--red)}
-.info-cards{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
-@media(max-width:800px){.info-cards{grid-template-columns:repeat(2,1fr)}}
-.info-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:4px}
-.info-card .ic-icon{font-size:20px;margin-bottom:2px}
-.info-card .ic-title{font-size:11px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:0.03em}
-.info-card .ic-value{font-size:15px;font-weight:600;color:var(--fg);line-height:1.5}
-.info-card .ic-sub{font-size:11px;color:var(--muted)}
+/* ─── Hero status card (modernized status-bar) ─────────────────────────── */
+.hero-status{border-radius:14px;padding:18px 22px;margin-bottom:16px;display:flex;align-items:center;gap:16px;transition:all 0.3s ease;border:1px solid var(--border);background:var(--card)}
+.hero-status.ready{border-color:var(--green);background:linear-gradient(135deg,rgba(63,185,80,0.12),rgba(63,185,80,0.03))}
+.hero-status.pending{border-color:var(--yellow);background:linear-gradient(135deg,rgba(210,153,29,0.12),rgba(210,153,29,0.03))}
+.hero-status.alarm{border-color:var(--red);background:linear-gradient(135deg,rgba(248,81,73,0.15),rgba(248,81,73,0.03))}
+.hero-status.down{border-color:var(--red);background:linear-gradient(135deg,rgba(248,81,73,0.1),rgba(248,81,73,0.02))}
+.hero-status .hero-icon{font-size:32px;flex-shrink:0;width:48px;height:48px;display:flex;align-items:center;justify-content:center;border-radius:12px;background:rgba(255,255,255,0.06)}
+.hero-status .hero-text{flex:1;min-width:0}
+.hero-status .hero-title{font-size:18px;font-weight:700;color:var(--fg);letter-spacing:-0.02em;line-height:1.3}
+.hero-status .hero-sub{font-size:12px;color:var(--muted);font-weight:500;margin-top:2px}
+.hero-status .hero-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;animation:pulse 2s ease-in-out infinite}
+.hero-status.ready .hero-dot{background:var(--green)}
+.hero-status.pending .hero-dot{background:var(--yellow)}
+.hero-status.alarm .hero-dot{background:var(--red)}
+.hero-status.down .hero-dot{background:var(--red)}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(0.85)}}
+
+/* ─── Stat tiles (modernized info-cards) ────────────────────────────────── */
+.stat-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
+@media(max-width:800px){.stat-grid{grid-template-columns:repeat(2,1fr)}}
+.stat-tile{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:6px;transition:all 0.2s ease;position:relative;overflow:hidden}
+.stat-tile:hover{background:var(--card-hover);transform:translateY(-1px)}
+.stat-tile::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:0 2px 2px 0;transition:background 0.2s}
+.stat-tile.accent-green::before{background:var(--green)}
+.stat-tile.accent-red::before{background:var(--red)}
+.stat-tile.accent-yellow::before{background:var(--yellow)}
+.stat-tile.accent-blue::before{background:var(--blue)}
+.stat-tile.accent-muted::before{background:var(--muted)}
+.stat-tile .st-header{display:flex;align-items:center;gap:8px}
+.stat-tile .st-icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;background:rgba(255,255,255,0.06);flex-shrink:0}
+.stat-tile .st-title{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:0.03em}
+.stat-tile .st-value{font-size:14px;font-weight:600;color:var(--fg);line-height:1.4}
+.stat-tile .st-sub{font-size:11px;color:var(--muted);line-height:1.4}
+.stat-tile .st-row{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:500}
+.stat-tile .st-mini-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.stat-tile .st-mini-dot.on{background:var(--red)}
+.stat-tile .st-mini-dot.off{background:var(--muted)}
+
+/* ─── Mode cards (modernized mode-grid) ─────────────────────────────────── */
+.mode-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+@media(max-width:600px){.mode-cards{grid-template-columns:repeat(2,1fr)}}
+.mode-card{border:1px solid var(--border);border-radius:12px;padding:16px 12px;background:var(--card);cursor:pointer;transition:all 0.2s ease;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center}
+.mode-card:hover{border-color:var(--blue);background:rgba(88,166,255,0.06);transform:translateY(-1px)}
+.mode-card.active{border-color:var(--green);background:rgba(63,185,80,0.08)}
+.mode-card.triggered{border-color:var(--red);background:rgba(248,81,73,0.1)}
+.mode-card.pending{border-color:var(--yellow);background:rgba(210,153,29,0.08)}
+.mode-card .mc-icon{font-size:24px;width:40px;height:40px;display:flex;align-items:center;justify-content:center;border-radius:10px;background:rgba(255,255,255,0.06)}
+.mode-card .mc-label{font-size:13px;font-weight:600;color:var(--fg);letter-spacing:-0.01em}
+.mode-card.active .mc-label{color:var(--green)}
+.mode-card.triggered .mc-label{color:var(--red)}
+.mode-card.pending .mc-label{color:var(--yellow)}
+.mode-card .mc-dot{width:8px;height:8px;border-radius:50%;background:transparent}
+.mode-card.active .mc-dot{background:var(--green)}
+.mode-card.triggered .mc-dot{background:var(--red);animation:pulse 1.5s ease-in-out infinite}
+.mode-card.pending .mc-dot{background:var(--yellow)}
+
+/* ─── New dashboard widgets ─────────────────────────────────────────────── */
+.zone-summary{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:16px}
+.zone-summary .zs-label{font-size:13px;font-weight:600;color:var(--fg);white-space:nowrap}
+.zone-summary .zs-bar{flex:1;height:8px;border-radius:4px;background:var(--border);overflow:hidden}
+.zone-summary .zs-fill{height:100%;border-radius:4px;transition:width 0.3s ease,background 0.3s ease}
+.zone-summary .zs-count{font-size:13px;font-weight:600;color:var(--muted);white-space:nowrap}
+
+.alert-banner{border-radius:12px;padding:12px 18px;margin-bottom:16px;display:flex;align-items:center;gap:10px;font-size:13px;font-weight:500;transition:all 0.3s ease}
+.alert-banner.warn{background:rgba(210,153,29,0.1);border:1px solid var(--yellow);color:var(--yellow)}
+.alert-banner.danger{background:rgba(248,81,73,0.1);border:1px solid var(--red);color:var(--red)}
+.alert-banner .ab-icon{font-size:18px;flex-shrink:0}
+.alert-banner .ab-text{flex:1}
+.alert-banner .ab-list{font-size:11px;opacity:0.8;margin-top:2px}
+
+.quick-actions{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+.qa-btn{flex:1;min-width:120px;padding:14px;border:none;border-radius:12px;cursor:pointer;font-size:14px;font-weight:600;color:#fff;transition:all 0.2s ease;display:flex;align-items:center;justify-content:center;gap:8px}
+.qa-btn:hover{opacity:0.88;transform:translateY(-1px)}
+.qa-btn:active{transform:scale(0.97)}
+.qa-btn.qa-arm{background:var(--green)}
+.qa-btn.qa-disarm{background:var(--red)}
+.qa-btn.qa-panic{background:var(--yellow);color:#1a1a1a}
+
+.conn-quality{display:flex;align-items:center;gap:10px}
+.cq-bar{flex:1;height:6px;border-radius:3px;background:var(--border);overflow:hidden;display:flex;gap:2px;padding:0}
+.cq-seg{flex:1;height:100%;border-radius:1px;transition:background 0.3s ease}
+.cq-seg.active.excellent{background:var(--green)}
+.cq-seg.active.good{background:var(--green)}
+.cq-seg.active.fair{background:var(--yellow)}
+.cq-seg.active.weak{background:var(--red)}
+.cq-label{font-size:11px;font-weight:600;color:var(--muted);white-space:nowrap}
+
+.recent-events{margin-bottom:16px}
+.recent-events .re-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+.recent-events .re-item:last-child{border-bottom:none}
+.recent-events .re-badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:6px;color:#fff;white-space:nowrap}
+.recent-events .re-badge.alarm{background:var(--red)}
+.recent-events .re-badge.system{background:var(--blue)}
+.recent-events .re-badge.relay{background:var(--yellow)}
+.recent-events .re-badge.sensor{background:var(--green)}
+.recent-events .re-time{font-size:11px;color:var(--muted);white-space:nowrap}
+.recent-events .re-desc{font-size:12px;color:var(--fg);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style></head>
 <body>
 <nav>
@@ -614,9 +699,17 @@ small{color:var(--muted);font-size:12px}
 </div>
 </nav>
 <div id="page-dashboard" class="page active"><h1>Home Alarm System</h1>
-<div class="status-bar" id="statusBar">Loading...</div>
+<div class="hero-status" id="heroStatus">Loading...</div>
+<div class="alert-banner" id="alertBanner" style="display:none"></div>
+<div class="zone-summary" id="zoneSummary" style="display:none"></div>
+<div class="quick-actions" id="quickActions" style="display:none">
+<button class="qa-btn qa-arm" onclick="quickArmAll()">🔒 Arm All</button>
+<button class="qa-btn qa-disarm" onclick="quickDisarmAll()">🔓 Disarm All</button>
+</div>
+<div class="stat-grid" id="statGrid">Loading...</div>
 <div class="info-cards" id="infoCards">Loading...</div>
-<div class="card"><h2>Alarm Mode</h2><div id="modeGrid">Loading...</div></div>
+<div class="card"><h2>Alarm Mode</h2><div class="mode-cards" id="modeGrid">Loading...</div></div>
+<div class="card" id="recentEventsCard" style="display:none"><h2>Recent Events</h2><div class="recent-events" id="recentEvents"></div></div>
 <div class="card"><h2>Zones</h2><div id="zones">Loading...</div></div>
 <div class="card"><h2>Relays</h2><div id="relays">Loading...</div></div>
 <div class="card"><h2>Sensors</h2><div id="sensors">Loading...</div></div>
@@ -891,39 +984,122 @@ function fmDur(s){
   return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m';
 }
 
-function renderStatusBar(){
+function renderHeroStatus(){
   let d=data;
   let wifiOk = d.wifi==='connected';
   let state = d.globalState||'disarmed';
-  let stateOk = state==='disarmed' || state==='pending';
-  let stateWarn = state==='pending';
-  let dotCls = wifiOk?(stateOk?'ok':(stateWarn?'warn':'bad')):'bad';
-  let statusText = wifiOk?((state==='triggered'?'⚠️ Alarm Active':(state==='disarmed'?'✅ System Ready':'⏳ '+state))):'❌ WiFi Down';
-  let h='<span class="stat-dot '+dotCls+'"></span>';
-  h+='<strong>'+statusText+'</strong>';
-  document.getElementById('statusBar').innerHTML=h;
+  let cls = wifiOk ? (state==='triggered'?'alarm':(state==='disarmed'?'ready':(state==='pending'?'pending':'ready'))) : 'down';
+  let icon = wifiOk ? (state==='triggered'?'\U0001F6A8':(state==='disarmed'?'\u2705':(state==='pending'?'\u23f3':'\U0001F512'))) : '\u274c';
+  let title = wifiOk ? (state==='triggered'?'Alarm Active':(state==='disarmed'?'System Ready':(state==='pending'?'Arming...':'System Armed'))) : 'WiFi Down';
+  let sub = wifiOk ? (d.activeMode ? modeLabels[d.activeMode] : '') : 'Check network connection';
+  let h='<div class="hero-icon">'+icon+'</div>';
+  h+='<div class="hero-text"><div class="hero-title">'+title+'</div><div class="hero-sub">'+sub+'</div></div>';
+  h+='<div class="hero-dot"></div>';
+  let el=document.getElementById('heroStatus');
+  el.className='hero-status '+cls;
+  el.innerHTML=h;
 }
 
-function renderInfoCards(){
+function renderStatTiles(){
   let d=data, ss=d.sensorSummary||{}, lt=d.lastTrigger||{};
-  let r0=d.relays&&d.relays[0]?d.relays[0].state?'🔴 ON':'🟢 OFF':'🟢 OFF';
-  let r1=d.relays&&d.relays[1]?d.relays[1].state?'🔴 ON':'🟢 OFF':'🟢 OFF';
-  let r2=d.relays&&d.relays[2]?d.relays[2].state?'🔴 ON':'🟢 OFF':'🟢 OFF';
-  let r3=d.relays&&d.relays[3]?d.relays[3].state?'🔴 ON':'🟢 OFF':'🟢 OFF';
-  let num='<span style="display:inline-block;width:28px;text-align:right;margin-right:6px">';
-  let rlbl='<span style="display:inline-block;width:60px;font-size:14px">';
-  let cards=[
-    {icon:'🚨', title:'Last Trigger', value:(lt.zoneName?('Z'+lt.zoneId+': '+lt.sensorName):'None'), sub:(lt.timeAgoSec?fmDur(lt.timeAgoSec)+' ago':'')},
-    {icon:'📊', title:'Sensors', value:num+ss.idle+'</span> Idle<br>'+num+ss.active+'</span> Active<br>'+num+ss.fault+'</span> Fault', sub:''},
-    {icon:'🔌', title:'Relays', value:rlbl+'Siren</span> '+r0+'<br>'+rlbl+'Alarm</span> '+r1+'<br>'+rlbl+'Tamper</span> '+r2+'<br>'+rlbl+'No-Pwr</span> '+r3, sub:''},
-    {icon:'🔧', title:'System', value:d.firmware+'<br><span style="font-size:12px;font-weight:400">Up: '+fmDur(d.uptime)+'<br>Heap: '+(d.heapFree>80000?'🟢 ':d.heapFree>50000?'🟡 ':d.heapFree>25000?'🟠 ':'🔴 ')+(d.heapFree/1024).toFixed(0)+' KB</span>', sub:d.device},
-    {icon:'🌐', title:'Network', value:d.ssid||'WiFi', sub:'IP '+(d.localIP||'')+'<br>RSSI '+d.rssi+' dBm<br>http://alarm.local<br>MQTT '+(d.mqttConnected?'✅':'❌')+'  ·  HA '+(d.haEnabled?'✅':'❌')}
-  ];
-  let h='';
-  cards.forEach(c=>{
-    h+='<div class="info-card"><div class="ic-icon">'+c.icon+'</div><div class="ic-title">'+c.title+'</div><div class="ic-value">'+c.value+'</div><div class="ic-sub">'+c.sub+'</div></div>';
+  let tiles=[];
+  let ltRecent = lt.timeAgoSec && lt.timeAgoSec < 3600;
+  tiles.push({icon:'🚨',title:'Last Trigger',accent:ltRecent?'red':'muted',
+    value:(lt.zoneName?('Z'+lt.zoneId+': '+lt.sensorName):'None'),
+    sub:(lt.timeAgoSec?fmDur(lt.timeAgoSec)+' ago':'No triggers yet')});
+  let sAccent = ss.active>0?'red':(ss.fault>0?'yellow':'green');
+  tiles.push({icon:'📊',title:'Sensors',accent:sAccent,
+    value:'<div class="st-row"><span class="st-mini-dot off"></span>'+ss.idle+' Idle</div><div class="st-row"><span class="st-mini-dot on"></span>'+ss.active+' Active</div><div class="st-row"><span class="st-mini-dot off"></span>'+ss.fault+' Fault</div>',
+    sub:''});
+  let relayRows='';
+  if(d.relays) d.relays.forEach((r,i)=>{
+    let on=r.state;
+    relayRows+='<div class="st-row"><span class="st-mini-dot '+(on?'on':'off')+'"></span>'+r.name+'</div>';
   });
-  document.getElementById('infoCards').innerHTML=h;
+  tiles.push({icon:'🔌',title:'Relays',accent:'blue',value:relayRows,sub:''});
+  let heapIcon = d.heapFree>80000?'🟢':d.heapFree>50000?'🟡':d.heapFree>25000?'🟠':'🔴';
+  tiles.push({icon:'🔧',title:'System',accent:'muted',
+    value:'<div class="st-row">'+d.firmware+'</div><div class="st-row">Up: '+fmDur(d.uptime)+'</div><div class="st-row">'+heapIcon+' '+(d.heapFree/1024).toFixed(0)+' KB free</div>',
+    sub:d.device});
+  let nAccent = d.mqttConnected?'green':(d.wifi==='connected'?'yellow':'red');
+  let rssiQ = d.rssi>=-50?'excellent':d.rssi>=-65?'good':d.rssi>=-75?'fair':'weak';
+  let cqHtml='<div class="conn-quality"><div class="cq-bar">';
+  for(let i=0;i<4;i++) cqHtml+='<div class="cq-seg '+(i<=(['weak','fair','good','excellent'].indexOf(rssiQ))?'active '+rssiQ:'')+'"></div>';
+  cqHtml+='</div><span class="cq-label">'+d.rssi+' dBm</span></div>';
+  tiles.push({icon:'🌐',title:'Network',accent:nAccent,
+    value:'<div class="st-row">'+(d.ssid||'WiFi')+'</div>'+cqHtml+'<div class="st-row">MQTT '+(d.mqttConnected?'✅':'❌')+' · HA '+(d.haEnabled?'✅':'❌')+'</div>',
+    sub:d.localIP||''});
+  let h='';
+  tiles.forEach(t=>{
+    h+='<div class="stat-tile accent-'+t.accent+'"><div class="st-header"><div class="st-icon">'+t.icon+'</div><div class="st-title">'+t.title+'</div></div><div class="st-value">'+t.value+'</div>'+(t.sub?'<div class="st-sub">'+t.sub+'</div>':'')+'</div>';
+  });
+  document.getElementById('statGrid').innerHTML=h;
+}
+
+function renderAlertBanner(){
+  let d=data, ss=d.sensorSummary||{};
+  let el=document.getElementById('alertBanner');
+  if(ss.active>0){
+    let activeList=[];
+    if(d.sensors) d.sensors.forEach(s=>{ if(s.state==='active') activeList.push(s.name||('T'+s.id)); });
+    el.className='alert-banner danger';
+    el.style.display='flex';
+    el.innerHTML='<div class="ab-icon">🚨</div><div class="ab-text"><strong>'+ss.active+' Active Sensor'+(ss.active>1?'s':'')+'</strong><div class="ab-list">'+activeList.join(', ')+'</div></div>';
+  } else if(ss.fault>0){
+    el.className='alert-banner warn';
+    el.style.display='flex';
+    el.innerHTML='<div class="ab-icon">⚠️</div><div class="ab-text"><strong>'+ss.fault+' Sensor Fault'+(ss.fault>1?'s':'')+'</strong></div>';
+  } else {
+    el.style.display='none';
+  }
+}
+
+function renderZoneSummary(){
+  let d=data;
+  if(!d.zones){ document.getElementById('zoneSummary').style.display='none'; return; }
+  let enabled=d.zones.filter(z=>z.enabled!==false);
+  let armed=enabled.filter(z=>z.armed).length;
+  let total=enabled.length;
+  if(total===0){ document.getElementById('zoneSummary').style.display='none'; return; }
+  let pct=Math.round(armed/total*100);
+  let fillColor = armed===total?'var(--green)':(armed>0?'var(--yellow)':'var(--muted)');
+  document.getElementById('zoneSummary').style.display='flex';
+  document.getElementById('zoneSummary').innerHTML='<div class="zs-label">🔒 Zones</div><div class="zs-bar"><div class="zs-fill" style="width:'+pct+'%;background:'+fillColor+'"></div></div><div class="zs-count">'+armed+' / '+total+' armed</div>';
+}
+
+function renderQuickActions(){
+  let d=data;
+  let el=document.getElementById('quickActions');
+  if(d.globalState==='triggered'){ el.style.display='none'; return; }
+  el.style.display='flex';
+}
+
+async function quickArmAll(){
+  await fetch('/api/mode/set?mode=armed_away');
+  load();
+}
+async function quickDisarmAll(){
+  await fetch('/api/mode/set?mode=disarmed');
+  load();
+}
+
+async function renderRecentEvents(){
+  try{
+    const r=await fetch('/api/eventlog');
+    const a=await r.json();
+    if(!a||!a.length){ document.getElementById('recentEventsCard').style.display='none'; return; }
+    let top3=a.slice(0,3);
+    let h='';
+    top3.forEach(e=>{
+      const cls=e.type===0?'alarm':e.type===2?'relay':e.type===3?'sensor':'system';
+      const badge=e.type===0?'ALARM':e.type===2?'RELAY':e.type===3?'SENSOR':'SYS';
+      const d=new Date(e.ts*1000);
+      const ts=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+      h+='<div class="re-item"><span class="re-badge '+cls+'">'+badge+'</span><span class="re-desc">'+(e.desc||'')+'</span><span class="re-time">'+ts+'</span></div>';
+    });
+    document.getElementById('recentEvents').innerHTML=h;
+    document.getElementById('recentEventsCard').style.display='block';
+  }catch(e){}
 }
 
 async function load(){
@@ -938,9 +1114,13 @@ async function load(){
     const r=await fetch('/api/status');
     if(r.status===401){window.location.href='/login.html';_pendingLoad=false;return;}
     data=await r.json();
-  renderStatusBar();
-  renderInfoCards();
+  renderHeroStatus();
+  renderAlertBanner();
+  renderZoneSummary();
+  renderQuickActions();
+  renderStatTiles();
   renderModeGrid();
+  renderRecentEvents();
   if(_authRole===0){
     renderZones(data.zones);
     renderSensors(data.sensors);
@@ -963,15 +1143,14 @@ function renderModeGrid() {
   ];
   const active = data.activeMode || 'disarmed';
   const gs = data.globalState || 'disarmed';
-  let h = '<div class="mode-grid-row">';
+  let h = '';
   modes.forEach(m => {
-    let cls = 'mode-btn';
+    let cls = 'mode-card';
     if (m.id === active) cls += ' active';
     if (gs === 'triggered' && m.id === active) cls += ' triggered';
     if (gs === 'pending' && m.id === active) cls += ' pending';
-    h += '<button class="' + cls + '" onclick="setMode(\'' + m.id + '\')">' + m.icon + ' ' + m.label + '</button>';
+    h += '<div class="' + cls + '" onclick="setMode(\'' + m.id + '\')"><div class="mc-icon">' + m.icon + '</div><div class="mc-label">' + m.label + '</div><div class="mc-dot"></div></div>';
   });
-  h += '</div>';
   document.getElementById('modeGrid').innerHTML = h;
 }
 
@@ -1564,7 +1743,10 @@ async function loadFast() {
         if (e) { e.state = z.state; e.armed = z.armed; e.label = z.label; }
       });
     }
-    renderStatusBar();
+    renderHeroStatus();
+    renderAlertBanner();
+    renderZoneSummary();
+    renderQuickActions();
     renderModeGrid();
     if (_authRole === 0) { renderRelays(data.relays); renderZones(data.zones); }
   } catch (e) {}
