@@ -295,7 +295,7 @@ struct SensorStateData {
   uint32_t activeSinceMs;
   uint32_t idleSinceMs;
   bool debouncePending;
-  bool debounceTarget;
+  uint8_t debounceTarget;  // 0=idle, 1=active, 2=fault (was bool — only tracked active)
   uint32_t debounceStartMs;
 };
 
@@ -308,9 +308,8 @@ struct ZoneStateData {
   uint32_t armedAtMs;
   uint32_t preAlarmStartMs;
   uint32_t alarmEnteredMs;  // timestamp when zone entered ZONE_ALARM
-  uint32_t sirenPhaseMs;    // start of current siren ON/OFF phase
-  bool sirenOn;             // true = siren relay should be ON this phase
-  bool sirenOneShotDone;    // true = one-shot siren ON period has completed
+  // Siren timing is handled exclusively by syncRelays() in alarm.cpp
+  // (relay-level static state machines — no per-zone duplication)
 };
 
 extern ZoneStateData zoneStates[MAX_ZONES];

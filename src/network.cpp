@@ -2,26 +2,58 @@
 #include "event_log.h"
 
 // ─── WiFi retry state ──────────────────────────────────────────────────────
-static uint8_t  wifiRetryCount     = 0;
-static uint32_t wifiRetryNextMs    = 0;
-static uint32_t apScanNextMs       = 0;
-static bool     wifiWasEverConnected = false;  // track if we ever had WiFi
+static uint8_t  wifiRetryCount        = 0;
+static uint32_t wifiRetryNextMs       = 0;
+static uint32_t apScanNextMs          = 0;
+static bool     wifiWasEverConnected  = false;  // track if we ever had WiFi
 
+// Non-blocking WiFi station connection state machine
+enum class WifiConnectState : uint8_t {
+  IDLE,
+  STARTING,
+  POLLING
+};
+static WifiConnectState wifiConnectState = WifiConnectState::IDLE;
+static uint32_t         wifiConnectStartMs = 0;
+
+// ─── Initiate a non-blocking WiFi STA connection ──────────────────────────
+// Returns true if already connected; caller must poll checkWifiConnectDone()
+// to know when connection attempt finishes.
 bool connectWiFiStation() {
   if (strlen(config.wifiSsid) == 0) return false;
 
+  // Already connected — nothing to do
+  if (WiFi.status() == WL_CONNECTED) {
+    wifiConnectState = WifiConnectState::IDLE;
+    wifiConnected = true;
+    return true;
+  }
+
+  // Already attempting — let polling continue
+  if (wifiConnectState == WifiConnectState::POLLING) return false;
+
+  // Start new attempt
   WiFi.setHostname(OTA_HOSTNAME);
   WiFi.mode(WIFI_STA);
   WiFi.begin(config.wifiSsid, config.wifiPass);
+  wifiConnectState  = WifiConnectState::POLLING;
+  wifiConnectStartMs = millis();
+  return false;
+}
 
-  unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED &&
-         (millis() - start) < WIFI_CONNECT_TIMEOUT_MS) {
-    delay(500);
-  }
+// ─── Poll the ongoing WiFi connection attempt ─────────────────────────────
+// Called from wifiStationRetryLoop() each iteration. Non-blocking.
+// Returns true when connected, false while still trying.
+static bool checkWifiConnectDone() {
+  if (wifiConnectState != WifiConnectState::POLLING) return false;
 
-  wifiConnected = (WiFi.status() == WL_CONNECTED);
-  if (wifiConnected) {
+  wl_status_t status = WiFi.status();
+  uint32_t now = millis();
+
+  // Connected
+  if (status == WL_CONNECTED) {
+    wifiConnectState = WifiConnectState::IDLE;
+    wifiConnected = true;
     apMode = false;
     wifiRetryCount = 0;
     wifiWasEverConnected = true;
@@ -30,8 +62,18 @@ bool connectWiFiStation() {
     logSystem(buf);
     snprintf(buf, sizeof(buf), "LAN IP: %s", WiFi.localIP().toString().c_str());
     logSystem(buf);
+    return true;
   }
-  return wifiConnected;
+
+  // Timed out
+  if (now - wifiConnectStartMs >= WIFI_CONNECT_TIMEOUT_MS) {
+    wifiConnectState = WifiConnectState::IDLE;
+    // Connection failed — caller will handle retry scheduling
+    return false;
+  }
+
+  // Still connecting — keep polling
+  return false;
 }
 
 void startConfigAP() {
@@ -72,25 +114,36 @@ void wifiStationRetryLoop() {
 
   // ─── Case 1: Trying to connect (not AP, not connected) ─────────────────
   if (!apMode && !wifiConnected) {
-    if (wifiRetryNextMs > 0 && now < wifiRetryNextMs) return;
-
-    if (connectWiFiStation()) {
-      // Success — back to normal
+    // If a connection attempt is in progress, poll it non-blockingly
+    if (wifiConnectState == WifiConnectState::POLLING) {
+      if (checkWifiConnectDone()) return;  // connected!
+      // If still polling — do nothing else this iteration
       return;
     }
 
-    // Still failing
+    // No active attempt — wait for retry interval if one is scheduled
+    if (wifiRetryNextMs > 0 && now < wifiRetryNextMs) return;
+
+    // Start a new connection attempt
+    if (connectWiFiStation()) {
+      // Already connected (unlikely here)
+      return;
+    }
+
+    // Connection attempt started (wifiConnectState == POLLING) —
+    // schedule retries AFTER this attempt times out
     wifiRetryCount++;
     if (wifiRetryCount >= WIFI_RETRY_MAX_ATTEMPTS) {
       // Max retries exhausted — fall back to AP
+      wifiConnectState = WifiConnectState::IDLE;
       logSystem("WiFi retries exhausted, switching to AP mode");
       startConfigAP();
       apScanNextMs = now + WIFI_AP_SCAN_INTERVAL_MS;
       return;
     }
 
-    // Schedule next retry
-    wifiRetryNextMs = now + WIFI_RETRY_INTERVAL_MS;
+    // Schedule next retry attempt (only fires if current one times out)
+    wifiRetryNextMs = now + WIFI_CONNECT_TIMEOUT_MS + 1000;  // wait for timeout + 1s
     return;
   }
 

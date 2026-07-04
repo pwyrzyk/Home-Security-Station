@@ -101,6 +101,18 @@ static void setZoneAlarmState(uint8_t zoneId, ZoneAlarmState newState) {
 
 // ─── Sync relay outputs based on zone states and relay config ─────────────
 static void syncRelays() {
+  // Fast-path exit: when global state is DISARMED and no manual overrides
+  // are active, all alarm-driven relays should already be OFF.
+  // Skip the full scan to save CPU cycles every 100ms iteration.
+  static bool relaysKnownOff = true;
+  bool anyManualOverride = false;
+  for (int r = 0; r < MAX_RELAYS; r++) {
+    if (relayManualOverride[r]) { anyManualOverride = true; break; }
+  }
+  if (alarmCtx.globalState == AlarmState::DISARMED && !anyManualOverride) {
+    if (relaysKnownOff) return;  // still disarmed, relays already OFF — nothing to do
+    // otherwise fall through to sync (first call after state change)
+  }
   for (int r = 0; r < MAX_RELAYS; r++) {
     RelayConfig &rc = config.relays[r];
 
@@ -274,11 +286,13 @@ static void syncRelays() {
 
 // ─── Handle digital input actions ─────────────────────────────────────────
 static void processDigitalInputs() {
-  static bool startupGraceActive = true;
+  static bool    startupGraceActive = true;
+  static uint32_t bootStartMs        = millis();  // captured once at first call
   if (startupGraceActive) {
     // Ignore digital inputs for first 3 seconds after boot
     // (prevents spurious active-low triggers from disarming on restart)
-    if (millis() < 3000) {
+    uint32_t now = millis();
+    if (now - bootStartMs < 3000) {
       for (int i = 0; i < MAX_DINPUTS; i++) dinputStates[i] = false;
       return;
     }
@@ -347,7 +361,7 @@ void alarmLoop() {
       case ZONE_ARMING:
         if (now - zs.armedAtMs >= ((uint32_t)zc.exitDelayS * 1000UL)) {
           setZoneAlarmState(zoneId, ZONE_ARMED_IDLE);
-          zs.armedAtMs = now;  // reset timestamp 2s settle grace period start
+          zs.armedAtMs = now;  // reset timestamp for settle grace period
         }
         break;
 
@@ -361,10 +375,7 @@ void alarmLoop() {
             zs.preAlarmStartMs = now;
           } else {
             setZoneAlarmState(zoneId, ZONE_ALARM);
-            zs.sirenOn = true;
-            zs.sirenPhaseMs = now;
             zs.alarmEnteredMs = now;
-            zs.sirenOneShotDone = false;
           }
         }
         break;
@@ -375,39 +386,14 @@ void alarmLoop() {
         // Sensor clearing does NOT cancel — must disarm manually
         if (now - zs.preAlarmStartMs >= ((uint32_t)zc.entryDelayS * 1000UL)) {
           setZoneAlarmState(zoneId, ZONE_ALARM);
-          zs.sirenOn = true;
-          zs.sirenPhaseMs = now;
           zs.alarmEnteredMs = now;
-          zs.sirenOneShotDone = false;
         }
         break;
 
       // ─── ALARM ────────────────────────────────────────────────────────
-      case ZONE_ALARM: {
-        if (zc.sirenOnS == 0) {
-          // Continuous ON — stays on until disarmed
-          zs.sirenOn = true;
-        } else if (zc.sirenOffS == 0) {
-          // One-shot: ON for sirenOnS, then OFF permanently
-          if (!zs.sirenOneShotDone) {
-            if (zs.sirenPhaseMs == 0) zs.sirenPhaseMs = now;
-            if (now - zs.sirenPhaseMs >= ((uint32_t)zc.sirenOnS * 1000UL)) {
-              zs.sirenOn = false;
-              zs.sirenOneShotDone = true;
-            } else {
-              zs.sirenOn = true;
-            }
-          }
-        } else {
-          // Cycling: ON for sirenOnS, OFF for sirenOffS, repeat
-          uint32_t phaseDuration = zs.sirenOn ? ((uint32_t)zc.sirenOnS * 1000UL) : ((uint32_t)zc.sirenOffS * 1000UL);
-          if (now - zs.sirenPhaseMs >= phaseDuration) {
-            zs.sirenOn = !zs.sirenOn;
-            zs.sirenPhaseMs = now;
-          }
-        }
+      case ZONE_ALARM:
+        // Siren timing handled entirely by syncRelays() — nothing to do here
         break;
-      }
 
       default:
         break;

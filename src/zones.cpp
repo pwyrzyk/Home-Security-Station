@@ -35,9 +35,7 @@ void zoneDisarm(uint8_t zoneId) {
   zoneStates[idx].armed = false;
   zoneStates[idx].alarmState = ZONE_DISARMED;
   zoneStates[idx].preAlarmStartMs = 0;
-  zoneStates[idx].sirenPhaseMs = 0;
-  zoneStates[idx].sirenOn = false;
-  zoneStates[idx].sirenOneShotDone = false;
+  // siren timing is managed by syncRelays() relay-level state machines
   notifyZoneChange(zoneId);
   saveArmedState();  // persist for power-fail recovery
 }

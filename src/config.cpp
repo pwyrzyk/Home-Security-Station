@@ -155,6 +155,22 @@ void saveConfig() {
 
 // ─── Power-fail state persistence ──────────────────────────────────────────
 
+// ─── Armed-state EEPROM region (dedicated, small — avoids wearing Config area) ──
+// Uses the last EEPROM page (offset = EEPROM_SIZE - sizeof(ArmedStateBlob))
+// to avoid overlap with the Config struct at offset 0.
+#define ARMED_STATE_MAGIC 0x5A
+struct ArmedStateBlob {
+  uint8_t  magic;
+  uint8_t  activeMode;
+  uint8_t  zoneArmedMask;
+  bool     stateRestoreValid;
+};
+static_assert(sizeof(ArmedStateBlob) <= 16, "ArmedStateBlob too large for dedicated EEPROM page");
+
+static int armedStateOffset() {
+  return EEPROM_SIZE - 16;  // last 16 bytes of EEPROM
+}
+
 void saveArmedState() {
   // Build bitmask of currently armed zones
   uint8_t mask = 0;
@@ -163,28 +179,51 @@ void saveArmedState() {
       mask |= (1U << z);
     }
   }
-  config.zoneArmedMask = mask;
-  config.savedActiveMode = (uint8_t)alarmCtx.activeMode;
-  config.stateRestoreValid = (mask != 0);
-  saveConfig();
+
+  ArmedStateBlob blob;
+  blob.magic            = ARMED_STATE_MAGIC;
+  blob.activeMode       = (uint8_t)alarmCtx.activeMode;
+  blob.zoneArmedMask    = mask;
+  blob.stateRestoreValid = (mask != 0);
+
+  // Write only the small blob — avoids full 4K EEPROM erase/write cycle
+  int offset = armedStateOffset();
+  EEPROM.put(offset, blob);
+  EEPROM.commit();
+
+  // Also sync to Config struct (for backward compatibility with saved fields)
+  config.savedActiveMode   = blob.activeMode;
+  config.zoneArmedMask     = blob.zoneArmedMask;
+  config.stateRestoreValid = blob.stateRestoreValid;
 
   char buf[64];
-  snprintf(buf, sizeof(buf), "Armed state saved: mask=0x%02X mode=%d", mask, config.savedActiveMode);
+  snprintf(buf, sizeof(buf), "Armed state saved: mask=0x%02X mode=%d", mask, blob.activeMode);
   logSystem(buf);
 }
 
 void restoreArmedState() {
-  Serial.printf("[BOT] restoreArmedState: valid=%d mask=0x%02X mode=%d\n",
-                config.stateRestoreValid, config.zoneArmedMask, config.savedActiveMode);
+  // First, try to read from the dedicated armed-state EEPROM blob (newer, more reliable)
+  int offset = armedStateOffset();
+  ArmedStateBlob blob;
+  EEPROM.get(offset, blob);
 
-  if (!config.stateRestoreValid || config.zoneArmedMask == 0) {
+  bool hasBlob = (blob.magic == ARMED_STATE_MAGIC && blob.stateRestoreValid && blob.zoneArmedMask != 0);
+
+  uint8_t  effectiveMask  = hasBlob ? blob.zoneArmedMask     : config.zoneArmedMask;
+  uint8_t  effectiveMode  = hasBlob ? blob.activeMode        : config.savedActiveMode;
+  bool     hasValid       = hasBlob ? blob.stateRestoreValid : config.stateRestoreValid;
+
+  Serial.printf("[BOT] restoreArmedState: blob=%d valid=%d mask=0x%02X mode=%d\n",
+                hasBlob, hasValid, effectiveMask, effectiveMode);
+
+  if (!hasValid || effectiveMask == 0) {
     Serial.println("[BOT] restoreArmedState: nothing to restore, returning");
     return;
   }
 
-  // Re-arm zones from saved bitmask
+  // Re-arm zones from saved bitmask (use effective values from blob or config)
   for (int z = 0; z < MAX_ZONES; z++) {
-    if (config.zoneArmedMask & (1U << z)) {
+    if (effectiveMask & (1U << z)) {
       zoneStates[z].armed = true;
       zoneStates[z].armedAtMs = millis();
       zoneStates[z].alarmState = ZONE_ARMED_IDLE;
@@ -193,9 +232,9 @@ void restoreArmedState() {
   }
 
   // Restore active mode
-  alarmCtx.activeMode = (AlarmMode)config.savedActiveMode;
-  alarmCtx.activeZoneMask = config.zoneArmedMask;
-  Serial.printf("[BOT] restoreArmedState: done, mode=%d\n", config.savedActiveMode);
+  alarmCtx.activeMode = (AlarmMode)effectiveMode;
+  alarmCtx.activeZoneMask = effectiveMask;
+  Serial.printf("[BOT] restoreArmedState: done, mode=%d\n", effectiveMode);
 }
 
 void loadConfig() {
@@ -496,9 +535,6 @@ void loadConfig() {
     zoneStates[i].armed         = false;
     zoneStates[i].alarmState    = ZONE_DISARMED;
     zoneStates[i].alarmEnteredMs  = 0;
-    zoneStates[i].sirenPhaseMs  = 0;
-    zoneStates[i].sirenOn       = false;
-    zoneStates[i].sirenOneShotDone = false;
   }
   for (int i = 0; i < MAX_RELAYS; i++) {
     relayStates[i] = false;

@@ -56,14 +56,12 @@ void sensorsLoop() {
     }
 
     // ─── Debounce ──────────────────────────────────────────────────────
-    bool effectiveActive = rawActive;
-    bool effectiveFault  = rawFault;
-
-    // Simple debounce: require state to be stable for debounceMs
-    uint8_t target = effectiveFault ? 2 : (effectiveActive ? 1 : 0);
-    if (st.debounceTarget != (target == 1)) {
+    // Require state to be stable for debounceMs before accepting change.
+    // debounceTarget tracks the 3-way target: 0=idle, 1=active, 2=fault
+    uint8_t target = rawFault ? 2 : (rawActive ? 1 : 0);
+    if (st.debounceTarget != target) {
       st.debouncePending  = true;
-      st.debounceTarget   = (target == 1);
+      st.debounceTarget   = target;
       st.debounceStartMs  = now;
     }
 

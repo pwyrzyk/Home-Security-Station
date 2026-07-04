@@ -240,7 +240,12 @@ static void apiNetworkConfig(AsyncWebServerRequest *req) {
   if (req->method() == HTTP_GET) {
     JsonDocument doc;
     doc["wifiSsid"]   = config.wifiSsid;
-    doc["wifiPass"]   = config.wifiPass;
+    // Redact WiFi password — never expose in plaintext over HTTP
+    if (strlen(config.wifiPass) > 0) {
+      doc["wifiPass"] = "****";
+    } else {
+      doc["wifiPass"] = "";
+    }
     doc["mqttServer"] = config.mqttServer;
     doc["mqttPort"]   = config.mqttPort;
     doc["mqttUser"]   = config.mqttUser;

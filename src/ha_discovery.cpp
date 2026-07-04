@@ -233,33 +233,34 @@ void haPublishAllDiscoveries() {
 
   // Main alarm panel (single entity)
   publishMainAlarmPanel();
-  delay(10);
+  mqtt.loop();  // flush TCP queue instead of blocking delay
 
   // Per-sensor binary_sensors (T1..T16)
   for (int i = 0; i < TOTAL_SENSORS; i++) {
     if (config.sensors[i].type == SENSOR_DISABLED) continue;
     publishBinarySensor(i, config.sensors[i]);
-    delay(10);
+    mqtt.loop();  // non-blocking — lets TCP send queued data
+    yield();      // yield to RTOS to prevent watchdog
   }
 
   // Per-zone state entities
   for (uint8_t z = 0; z < MAX_ZONES; z++) {
     publishZoneStateSensor(z);
-    delay(5);
+    mqtt.loop();
   }
 
   // Meta sensors
   publishActiveProfileSensor();
-  delay(10);
+  mqtt.loop();
   publishLastTriggerZoneSensor();
-  delay(10);
+  mqtt.loop();
   publishLastTriggerSensorSensor();
-  delay(10);
+  mqtt.loop();
 
   // Relay switches
   for (uint8_t r = 0; r < MAX_RELAYS; r++) {
     publishSwitchRelay(r);
-    delay(10);
+    mqtt.loop();
   }
 
   logSystem("HA autodiscovery: complete");
