@@ -721,7 +721,7 @@ small{color:var(--muted);font-size:12px}
 <div class="alert-banner" id="alertBanner" style="display:none"></div>
 <div class="zone-summary" id="zoneSummary" style="display:none"></div>
 <div class="quick-actions" id="quickActions" style="display:none">
-<button class="qa-btn qa-panic" onclick="quickPanic()">🆘 Panic</button>
+<button class="qa-btn qa-panic" id="panicBtn" onclick="quickPanic()">🆘 Panic</button>
 <button class="qa-btn qa-disarm" onclick="quickDisarmAll()">🔓 Disarm All</button>
 </div>
 <div class="stat-grid" id="statGrid">Loading...</div>
@@ -1091,7 +1091,16 @@ function renderQuickActions(){
 }
 
 async function quickPanic(){
-  await fetch('/api/extsensors/trigger?id=16&state=on');
+  // Toggle E16 sensor: if currently active → deactivate; if idle → activate
+  let isActive = false;
+  if (data.ext_sensors && data.ext_sensors.length >= 16) {
+    isActive = data.ext_sensors[15].active;
+  }
+  let newState = isActive ? 'off' : 'on';
+  await fetch('/api/extsensors/trigger?id=16&state=' + newState);
+  // Update button label immediately (optimistic, before reload)
+  let btn = document.getElementById('panicBtn');
+  if (btn) btn.innerHTML = newState === 'on' ? '🛑 Panic OFF' : '🆘 Panic';
   load();
 }
 async function quickDisarmAll(){
