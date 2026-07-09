@@ -53,6 +53,12 @@ void setup() {
   logSystem("System booted");
 
   // Network
+  // Disable WiFi modem sleep BEFORE connecting — must be set unconditionally
+  // because ensureWiFiMode() returns asynchronously and wifiConnected is still
+  // false at this point. Without this, idle TCP connections (MQTT, HTTP) drop
+  // after ~60s when the modem enters power-save.
+  WiFi.setSleep(false);
+
   Serial.println("[BOT] Starting WiFi...");
   ensureWiFiMode();
   Serial.printf("[BOT] WiFi: %s (AP=%s)\n", wifiConnected ? "connected" : "failed", apMode ? "yes" : "no");
@@ -63,6 +69,7 @@ void setup() {
   Serial.println("[BOT] Init OTA...");
   initOTA();
   mqttApplyServerConfig();
+  mqtt.setKeepAlive(60);   // 60s keepalive — matches broker defaults
   mqtt.setCallback(mqttCallback);
   mqtt.setBufferSize(2048);
 
@@ -100,22 +107,28 @@ void loop() {
   // ─── Alarm engine ──────────────────────────────────────────────────────
   alarmLoop();
 
+  // ─── Deferred web actions (ext sensor triggers, relay commands, restart) ▐
+  // MUST run before MQTT reconnect/status — an ext-sensor API call should
+  // take effect within one loop iteration (<200ms), not be blocked for
+  // seconds while MQTT reconnects and publishes HA discovery.
+  webLoop();
+
   // ─── NTP ────────────────────────────────────────────────────────────
   syncNTP();
 
   // ─── MQTT ───────────────────────────────────────────────────────────
+  // Always run mqtt.loop() — PubSubClient needs it to process the TCP
+  // handshake during connect(). Skipping it when disconnected makes
+  // reconnection take longer.
+  mqtt.loop();
   if (wifiConnected && !mqtt.connected()) {
     connectMQTT();
   }
-  mqtt.loop();
   mqttFlushPostConnect();
   mqttStatusLoop();
 
   // ─── Deferred config save (dirty-flag flush) ───────────────────────────
   configSaveLoop();
-
-  // ─── Deferred web actions (restart/reconnect) ──────────────────────────
-  webLoop();
 
   // ─── Event log batch flush ────────────────────────────────────────────
   eventLogFlushIfNeeded();

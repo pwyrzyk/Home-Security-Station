@@ -70,6 +70,8 @@ bool armMode(AlarmMode mode, const char* source) {
   // Disarm zones not in the mode (only if currently armed)
   for (uint8_t z = 1; z <= MAX_ZONES; z++) {
     if (!(effectiveMask & (1U << (z - 1)))) {
+      // Always-armed zones (panic/24h) cannot be disarmed
+      if (config.zones[z - 1].alwaysArmed) continue;
       if (isZoneArmed(z)) {
         zoneDisarmNoSave(z);
       }
@@ -80,6 +82,14 @@ bool armMode(AlarmMode mode, const char* source) {
   for (uint8_t z = 1; z <= MAX_ZONES; z++) {
     if (effectiveMask & (1U << (z - 1))) {
       zoneArmNoSave(z);
+    }
+  }
+
+  // Always-armed zones are always included in the active mask regardless of mode
+  for (uint8_t z = 1; z <= MAX_ZONES; z++) {
+    if (config.zones[z - 1].alwaysArmed && config.zones[z - 1].enabled) {
+      effectiveMask |= (1U << (z - 1));
+      if (!isZoneArmed(z)) zoneArmNoSave(z);
     }
   }
 

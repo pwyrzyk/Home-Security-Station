@@ -78,7 +78,20 @@ void setDefaults() {
     config.zones[i].alarmRelayEnabled  = true;
     config.zones[i].alarmRelayOnS      = 0;
     config.zones[i].alarmRelayOffS     = 0;
+    config.zones[i].alwaysArmed        = false;
   }
+  // Z8 = Panic zone (always armed, cannot be disarmed)
+  snprintf(config.zones[7].name, sizeof(config.zones[7].name), "Panic");
+  config.zones[7].enabled      = true;
+  config.zones[7].sirenEnabled  = true;
+  config.zones[7].alarmRelayEnabled = true;
+  config.zones[7].alwaysArmed   = true;
+  config.zones[7].entryDelayS   = 0;
+  config.zones[7].exitDelayS    = 0;
+  config.zones[7].sirenOnS = 0;       // continuous siren
+  config.zones[7].sirenOffS = 0;
+  config.zones[7].alarmRelayOnS = 0;   // continuous alarm relay
+  config.zones[7].alarmRelayOffS = 0;
 
   // ─── Default relays (active LOW) ──────────────────────────────────────
   const char* relayNames[MAX_RELAYS] = { "Siren", "Alarm", "Tamper", "No-Power" };
@@ -97,10 +110,14 @@ void setDefaults() {
     config.extSensors[i].enabled  = false;
     config.extSensors[i].zoneMask = 0;
   }
+  // E16 = Panic sensor (pre-configured for always-armed zone Z8)
+  snprintf(config.extSensors[15].name, sizeof(config.extSensors[15].name), "Panic");
+  config.extSensors[15].enabled  = true;
+  config.extSensors[15].zoneMask = (1U << 7);  // assigned to Z8
 
   // ─── Default digital inputs ───────────────────────────────────────────
-  config.dinputs[0].action    = INPUT_ACTION_ARM_ZONE;
-  config.dinputs[0].zoneId    = 1;
+  config.dinputs[0].action    = INPUT_ACTION_PANIC;
+  config.dinputs[0].zoneId    = 0;
   config.dinputs[0].pin       = DIN_ARM_ZONE;
   config.dinputs[0].activeLow = true;
   config.dinputs[0].debounceMs = 50;
@@ -286,15 +303,64 @@ void loadConfig() {
   // ─── Try LittleFS first (primary config storage) ─────────────────────
   if (LittleFS.exists("/config.bin")) {
     File f = LittleFS.open("/config.bin", "r");
-    if (f && f.size() == sizeof(config)) {
+    size_t fileSize = f ? f.size() : 0;
+
+    if (f && fileSize == sizeof(config)) {
+      // Exact match — direct read
       size_t read = f.read((uint8_t*)&config, sizeof(config));
       f.close();
       if (read == sizeof(config)) {
         loadedFromLittleFS = true;
         Serial.printf("[CFG] Loaded from LittleFS (SSID='%s')\n", config.wifiSsid);
       }
+    } else if (f && fileSize > 0 && fileSize < sizeof(config)) {
+      // ─── Migration: struct size changed — read old format, zero new fields ──
+      // ZoneConfig grew by alwaysArmed (1 byte/zone × MAX_ZONES).
+      // Without migration, the EEPROM fallback reads shifted binary → corrupts
+      // relays, digital inputs, mode profiles, HA settings, and users.
+      #define OLD_ZONECFG_SZ (sizeof(ZoneConfig) - sizeof(bool))
+      #define ZONE_COUNT     MAX_ZONES
+      uint8_t *raw = (uint8_t*)malloc(fileSize);
+      if (raw) {
+        f.read(raw, fileSize);
+        f.close();
+
+        memset(&config, 0, sizeof(config));
+
+        // Prefix: copy everything before zones[] (wifi/mqtt/extSensors/sensors)
+        size_t prefixEnd = offsetof(Config, zones);
+        memcpy(&config, raw, prefixEnd);
+
+        // Zones: each old entry is OLD_ZONECFG_SZ bytes, new is sizeof(ZoneConfig)
+        for (int i = 0; i < ZONE_COUNT; i++) {
+          size_t srcOff = prefixEnd + i * OLD_ZONECFG_SZ;
+          size_t dstOff = prefixEnd + i * sizeof(ZoneConfig);
+          if (srcOff + OLD_ZONECFG_SZ <= fileSize) {
+            memcpy((uint8_t*)&config + dstOff, raw + srcOff, OLD_ZONECFG_SZ);
+          }
+          config.zones[i].alwaysArmed = false;
+        }
+
+        // Tail: copy everything after zones[] — shifted by ZONE_COUNT bytes
+        size_t oldTailOff = prefixEnd + ZONE_COUNT * OLD_ZONECFG_SZ;
+        size_t newTailOff = prefixEnd + ZONE_COUNT * sizeof(ZoneConfig);
+        size_t tailLen    = fileSize > oldTailOff ? fileSize - oldTailOff : 0;
+        if (tailLen > 0) {
+          memcpy((uint8_t*)&config + newTailOff, raw + oldTailOff, tailLen);
+        }
+
+        free(raw);
+        config.magic = EEPROM_MAGIC;
+        loadedFromLittleFS = true;
+        saveConfig();  // persist in new format immediately
+        Serial.printf("[CFG] Migrated config from old format (%u → %u bytes)\n",
+                      (unsigned)fileSize, (unsigned)sizeof(config));
+      } else {
+        f.close();
+      }
+    } else {
+      if (f) f.close();
     }
-    if (f) f.close();
   }
 
   // ─── Fallback: try EEPROM (for migration from old firmware) ──────────
@@ -355,6 +421,33 @@ void loadConfig() {
   if (config.relays[0].mode == RELAY_FOLLOW_ZONE && config.relays[0].zoneId != 0) {
     config.relays[0].zoneId = 0;
     saveConfig();
+  }
+
+  // ─── Sanitize relay config: detect garbage from struct-migration corruption ──
+  // When sizeof(Config) changes and the migration byte-remapping places fields
+  // at wrong offsets, relay names can read as empty or non-printable garbage.
+  // Check mode/zoneId AND name validity — mode alone can fall in valid range.
+  {
+    bool relayFixed = false;
+    const char* factoryNames[MAX_RELAYS] = { "Siren", "Alarm", "Tamper", "No-Power" };
+    const RelayMode factoryModes[MAX_RELAYS] = { RELAY_FOLLOW_ZONE, RELAY_PULSE_MODE, RELAY_OFF, RELAY_OFF };
+    for (int r = 0; r < MAX_RELAYS; r++) {
+      bool corrupted = ((uint8_t)config.relays[r].mode > 3)
+                    || (config.relays[r].zoneId > MAX_ZONES)
+                    || (config.relays[r].name[0] == 0)
+                    || ((uint8_t)config.relays[r].name[0] < 32 && config.relays[r].name[0] != 0);
+      if (corrupted) {
+        config.relays[r].mode    = factoryModes[r];
+        config.relays[r].zoneId  = 0;
+        config.relays[r].enabled = true;
+        strlcpy(config.relays[r].name, factoryNames[r], sizeof(config.relays[r].name));
+        relayFixed = true;
+      }
+    }
+    if (relayFixed) {
+      saveConfig();
+      Serial.println("[BOT] Relay config sanitized after struct migration");
+    }
   }
 
   // ─── EEPROM struct stability: force bool flags to safe defaults ───────

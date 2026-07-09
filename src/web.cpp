@@ -721,7 +721,7 @@ small{color:var(--muted);font-size:12px}
 <div class="alert-banner" id="alertBanner" style="display:none"></div>
 <div class="zone-summary" id="zoneSummary" style="display:none"></div>
 <div class="quick-actions" id="quickActions" style="display:none">
-<button class="qa-btn qa-arm" onclick="quickArmAll()">🔒 Arm All</button>
+<button class="qa-btn qa-panic" onclick="quickPanic()">🆘 Panic</button>
 <button class="qa-btn qa-disarm" onclick="quickDisarmAll()">🔓 Disarm All</button>
 </div>
 <div class="stat-grid" id="statGrid">Loading...</div>
@@ -793,6 +793,7 @@ small{color:var(--muted);font-size:12px}
 <div style="margin-top:12px;display:flex;gap:8px">
 <button class="btn btn-save" onclick="saveConfig()">Save Config</button>
 <button class="btn btn-save" onclick="reconnect()">Reconnect WiFi</button>
+<button class="btn btn-save" onclick="window.open('/docs','_blank')">📖 Documentation</button>
 <button class="btn btn-danger" onclick="restart()">Restart</button></div>
 <div id="cfgMsg" style="margin-top:8px;font-size:13px"></div></div>
 <div id="page-eventlog" class="page">
@@ -1089,8 +1090,8 @@ function renderQuickActions(){
   el.style.display='flex';
 }
 
-async function quickArmAll(){
-  await fetch('/api/mode/set?mode=armed_away');
+async function quickPanic(){
+  await fetch('/api/extsensors/trigger?id=16&state=on');
   load();
 }
 async function quickDisarmAll(){
@@ -1348,6 +1349,9 @@ async function renderZoneCards(a){
 <label style="display:inline-flex;align-items:center;gap:3px;margin-top:0;font-size:10px;color:#86868b">
 <input type="checkbox" id="z${z.id}_alarmRelayEnabled" ${z.alarmRelayEnabled!==false?'checked':''}>Alarm Relay
 </label>
+<label style="display:inline-flex;align-items:center;gap:3px;margin-top:0;font-size:10px;color:var(--red);font-weight:600">
+<input type="checkbox" id="z${z.id}_alwaysArmed" ${z.alwaysArmed?'checked':''} onchange="if(this.checked){if(!confirm('Always Armed zones cannot be disarmed. Siren/Alarm relay will fire on any sensor trigger in this zone. Continue?')){this.checked=false}}">⚠️ Always Armed
+</label>
 </div>
 ${sensors?`<div style="font-size:10px;color:#86868b;margin:2px 0">Sensors: ${sensors}</div>`:''}
 <div class="sens-foot"><button class="sens-upd" onclick="saveZones()">Update</button></div>
@@ -1369,6 +1373,7 @@ async function saveZones(){
     body.set('z'+i+'_alarmRelayEnabled',document.getElementById('z'+i+'_alarmRelayEnabled')?.checked?'1':'0');
     body.set('z'+i+'_alarmRelayOnS',document.getElementById('z'+i+'_alarmRelayOnS')?.value||'0');
     body.set('z'+i+'_alarmRelayOffS',document.getElementById('z'+i+'_alarmRelayOffS')?.value||'0');
+    body.set('z'+i+'_alwaysArmed',document.getElementById('z'+i+'_alwaysArmed')?.checked?'1':'0');
   }
   const r=await fetch('/api/zones',{method:'POST',body});
   const d=await r.json();
@@ -1771,6 +1776,340 @@ let _fastPollId = setInterval(loadFast, 1000);
 load();let _fullPollId = setInterval(load, 3000);
 </script></body></html>)rawliteral";
 
+// ─── Documentation page HTML ────────────────────────────────────────────────
+
+static const char DOCS_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Documentation - Home Alarm</title><style>
+:root{--bg:#0d1117;--fg:#c9d1d9;--card:#161b22;--border:#30363d;--muted:#8b949e;--blue:#58a6ff;--green:#3fb950;--red:#f85149;--yellow:#d2991d}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif;background:var(--bg);color:var(--fg);min-height:100vh;-webkit-font-smoothing:antialiased}
+.container{max-width:900px;margin:0 auto;padding:32px 24px}
+h1{font-size:28px;font-weight:700;margin-bottom:4px;letter-spacing:-0.02em}
+h2{font-size:18px;font-weight:600;margin:28px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border);letter-spacing:-0.01em}
+h3{font-size:14px;font-weight:600;margin:18px 0 8px;color:var(--blue)}
+p,li{font-size:14px;line-height:1.6;color:var(--fg);margin:6px 0}
+ul,ol{margin:4px 0 12px 20px}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--border)}
+th{font-weight:600;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:0.03em}
+td{font-family:"SF Mono","Menlo","Monaco",monospace;font-size:13px}
+td:first-child{font-weight:600;color:var(--blue)}
+pre{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px 18px;overflow-x:auto;font-size:12px;line-height:1.5;margin:10px 0;font-family:"SF Mono","Menlo","Monaco",monospace}
+pre .c{color:var(--muted)}
+code{font-family:"SF Mono","Menlo","Monaco",monospace;font-size:12px;background:var(--card);padding:2px 6px;border-radius:4px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin:14px 0}
+.badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600}
+.badge.green{background:var(--green);color:#000}
+.badge.red{background:var(--red);color:#fff}
+.badge.blue{background:var(--blue);color:#000}
+.badge.yellow{background:var(--yellow);color:#000}
+.ip-highlight{color:var(--green);font-weight:700}
+nav{padding:16px 24px}
+nav a{color:var(--muted);font-size:14px;font-weight:500}
+@media(max-width:600px){.container{padding:16px 12px}pre{font-size:10px;padding:10px}td{font-size:11px}}
+</style></head>
+<body>
+<nav><a href="/">← Back to Dashboard</a></nav>
+<div class="container">
+<h1>📖 Home Alarm System Documentation</h1>
+<p style="color:var(--muted);margin-bottom:24px">Firmware <span id="fwVer">—</span> &middot; Device <span id="devId">—</span> &middot; IP <span class="ip-highlight" id="devIp">—</span></p>
+
+<!-- ─── 1. HARDWARE ─────────────────────────────────────────────────────── -->
+<h2>1. Hardware Description</h2>
+<div class="card">
+<h3>ESP32-C3-DevKitM-1</h3>
+<table>
+<tr><th>Spec</th><th>Value</th></tr>
+<tr><td>MCU</td><td>ESP32-C3 RISC-V</td></tr>
+<tr><td>Clock</td><td>160 MHz</td></tr>
+<tr><td>RAM</td><td>400 KB SRAM</td></tr>
+<tr><td>Flash</td><td>4 MB</td></tr>
+<tr><td>WiFi</td><td>2.4 GHz 802.11 b/g/n</td></tr>
+<tr><td>Filesystem</td><td>LittleFS</td></tr>
+</table>
+
+<h3>GPIO Pin Mapping</h3>
+<table>
+<tr><th>GPIO</th><th>Function</th><th>Notes</th></tr>
+<tr><td>0</td><td>I2C SDA</td><td>ADS1115 bus</td></tr>
+<tr><td>2</td><td>Status LED</td><td>Built-in (LOW=off, HIGH=on)</td></tr>
+<tr><td>3</td><td>I2C SCL</td><td>ADS1115 bus</td></tr>
+<tr><td>5</td><td>Relay Siren</td><td>Active LOW (LOW=ON)</td></tr>
+<tr><td>6</td><td>Relay Pulse</td><td>Active LOW</td></tr>
+<tr><td>7</td><td>Relay Tamper</td><td>Active LOW</td></tr>
+<tr><td>8</td><td>Digital In ARM ZONE</td><td>Active LOW, ext. pull-up to 3.3V</td></tr>
+<tr><td>9</td><td>Digital In DISARM ALL</td><td>Active LOW, ext. pull-up to 3.3V</td></tr>
+<tr><td>10</td><td>Relay No-Power</td><td>Active LOW</td></tr>
+<tr><td>20</td><td>Prealarm Output</td><td>Digital OUT</td></tr>
+</table>
+
+<h3>ADS1115 16-bit ADC (×4, I2C)</h3>
+<table>
+<tr><th>Address</th><th>Channels</th><th>Range</th></tr>
+<tr><td>0x48</td><td>T1 – T4</td><td>±4.096 V (1 mV/LSB)</td></tr>
+<tr><td>0x49</td><td>T5 – T8</td><td>±4.096 V</td></tr>
+<tr><td>0x4A</td><td>T9 – T12</td><td>±4.096 V</td></tr>
+<tr><td>0x4B</td><td>T13 – T16</td><td>±4.096 V</td></tr>
+</table>
+<p><strong>16 analog sensor inputs total.</strong> Each channel reads raw voltage in mV. Thresholds define detection ranges — idle (standby), active (detect), and fault. Each sensor can be assigned to one or more zones.</p>
+</div>
+
+<!-- ─── 2. CONFIGURATION GUIDE ──────────────────────────────────────────── -->
+<h2>2. Configuration Guide</h2>
+
+<div class="card">
+<h3>2.1 First Boot &mdash; Access Point Mode</h3>
+<ol>
+<li>Power on the device. If no WiFi is configured, it starts in <strong>AP mode</strong>.</li>
+<li>Connect to the WiFi network <code>Alarm-AP-XXXX</code> (password: <code>12345678</code>).</li>
+<li>Open <code>http://192.168.4.1</code> in a browser.</li>
+<li>Log in with default credentials: <code>admin</code> / <code>admin</code>.</li>
+<li>You will be prompted to change the password on first login.</li>
+</ol>
+</div>
+
+<div class="card">
+<h3>2.2 Network Setup</h3>
+<ol>
+<li>Go to <strong>Config</strong> tab.</li>
+<li>Enter your WiFi SSID and password.</li>
+<li>Enter MQTT broker address (IP or hostname), port (default 1883), and credentials if required.</li>
+<li>Click <strong>Save Config</strong>. The device will reconnect to your WiFi.</li>
+<li>After reconnection, access the dashboard at the new LAN IP (check your router, or use <code>http://alarm.local</code> if mDNS is supported).</li>
+</ol>
+</div>
+
+<div class="card">
+<h3>2.3 Sensor Configuration</h3>
+<ol>
+<li>Go to <strong>Sensors</strong> tab.</li>
+<li>For each sensor (T1–T16), set:<ul>
+<li><strong>Type:</strong> PIR, Contactron (reed switch), or Off (disabled)</li>
+<li><strong>Name:</strong> Descriptive label (e.g. "Front Door")</li>
+<li><strong>Idle range:</strong> Voltage range considered normal/standby (e.g. 0–2000 mV). The LED bar goes <span style="color:var(--green)">green</span>.</li>
+<li><strong>Active range:</strong> Voltage range that triggers detection (e.g. 4000–6000 mV). The LED bar goes <span style="color:var(--red)">red</span>. Set Max to 65535 for "no upper bound".</li>
+<li><strong>Fault range:</strong> Voltage range that indicates a wiring fault or tamper (e.g. 30000–33000 mV). The LED bar goes <span style="color:var(--yellow)">yellow</span>. Set both min and max to 0 to disable.</li>
+<li><strong>Debounce:</strong> Time (ms) the voltage must be stable before state change is accepted.</li>
+<li><strong>Active after / Idle after:</strong> On/off delay timers (ms). Sensor must stay in the new range for this long before the state actually transitions.</li>
+<li><strong>Zones:</strong> Check which zones this sensor belongs to.</li>
+</ul></li>
+<li>Click <strong>Update</strong> to save each sensor, or <strong>Save Sensors</strong> to save all.</li>
+</ol>
+<p style="color:var(--muted);font-size:12px;margin-top:6px">💡 The live voltage value (mV) and colored bar show you whether the current reading falls within each threshold range. Use this to calibrate your thresholds.</p>
+</div>
+
+<div class="card">
+<h3>2.4 Zone Configuration</h3>
+<ol>
+<li>Go to <strong>Zones</strong> tab.</li>
+<li>For each zone (Z1–Z8), configure:<ul>
+<li><strong>Name:</strong> Descriptive label (e.g. "Perimeter")</li>
+<li><strong>Enable:</strong> Toggle the zone on/off</li>
+<li><strong>Exit Delay:</strong> Seconds after arming before sensors are monitored (0–120). Gives you time to leave.</li>
+<li><strong>Entry Delay:</strong> Seconds after sensor triggers before alarm sounds (0–120). Gives you time to disarm.</li>
+<li><strong>Siren cycle:</strong> ON/OFF times in seconds for the siren relay. Set ON=0 for continuous siren.</li>
+<li><strong>Alarm relay cycle:</strong> ON/OFF times for the pulse relay during alarm.</li>
+<li><strong>Siren checkbox:</strong> Enable siren relay for this zone.</li>
+<li><strong>Alarm Relay checkbox:</strong> Enable pulse relay for this zone.</li>
+</ul></li>
+<li>Click <strong>Update</strong> to save each zone, or <strong>Save All Zones</strong> to save all.</li>
+</ol>
+</div>
+
+<div class="card">
+<h3>2.5 Alarm Mode Profiles</h3>
+<ol>
+<li>Go to <strong>Alarm Modes</strong> tab.</li>
+<li>For each mode (Armed Home, Armed Away, Armed Night, Armed Vacation, Custom Bypass), check which zones should be active.</li>
+<li>Disarmed mode is fixed — no zones are monitored.</li>
+<li>Click <strong>Save Alarm Modes</strong>.</li>
+</ol>
+<p style="color:var(--muted);font-size:12px;margin-top:6px">💡 If a mode has no zones assigned, arming it will be rejected.</p>
+</div>
+
+<div class="card">
+<h3>2.6 User Management</h3>
+<ol>
+<li>Go to <strong>Users</strong> tab (admin only).</li>
+<li>Three roles available:<ul>
+<li><strong>Admin:</strong> Full access to all settings and tabs.</li>
+<li><strong>Operator:</strong> Can arm/disarm via dashboard but cannot change configuration.</li>
+<li><strong>API:</strong> Can only trigger external sensors via REST API — no dashboard access.</li>
+</ul></li>
+<li>Each user has a username, password, and 4-digit PIN for keypad arming.</li>
+<li>The system ships with <code>admin/admin</code> (Admin) and <code>api_user/api_user</code> (API).</li>
+</ol>
+</div>
+
+<div class="card">
+<h3>2.7 Backup & Restore</h3>
+<ol>
+<li>Go to <strong>Config</strong> tab → <strong>Backup & Restore</strong>.</li>
+<li><strong>Download Backup:</strong> Exports all configuration + event log as a JSON file.</li>
+<li><strong>Upload & Restore:</strong> Select a backup file and click restore. The device will reboot after restoring. <strong>All current settings will be overwritten.</strong></li>
+<li>Backup/restore covers: WiFi, MQTT, users, sensors, zones, relays, external sensors, digital inputs, alarm mode profiles, and event log.</li>
+</ol>
+</div>
+
+<!-- ─── 3. HOME ASSISTANT ───────────────────────────────────────────────── -->
+<h2>3. Home Assistant Integration</h2>
+
+<div class="card">
+<h3>3.1 Enable Auto-Discovery</h3>
+<ol>
+<li>Go to <strong>Config</strong> tab.</li>
+<li>Ensure MQTT is configured and connected (check the Dashboard status tile shows MQTT ✅).</li>
+<li>Auto-discovery is enabled by default. If disabled, toggle <strong>HA Discovery</strong> in config and save.</li>
+<li>The device publishes MQTT discovery messages on connect. In Home Assistant, go to <strong>Settings → Devices & Services → MQTT</strong> — you should see the alarm device with all its entities.</li>
+</ol>
+</div>
+
+<div class="card">
+<h3>3.2 Auto-Discovered Entities</h3>
+<table>
+<tr><th>Entity</th><th>Type</th><th>Description</th></tr>
+<tr><td>alarm_control_panel.home_alarm</td><td>Alarm Panel</td><td>Arm/disarm with modes: disarmed, armed_home, armed_away, armed_night, armed_vacation, armed_custom_bypass</td></tr>
+<tr><td>binary_sensor.*</td><td>Binary Sensor (×16)</td><td>One per wired sensor input (T1–T16). State: on/off</td></tr>
+<tr><td>binary_sensor.*</td><td>Binary Sensor (×16)</td><td>One per external MQTT sensor (E1–E16)</td></tr>
+<tr><td>switch.*</td><td>Switch (×4)</td><td>Relay control (Siren, Pulse, Tamper, No-Power)</td></tr>
+<tr><td>sensor.*</td><td>Sensor</td><td>WiFi RSSI, uptime, heap free</td></tr>
+</table>
+<p style="color:var(--muted);font-size:12px;margin-top:6px">💡 Use the Alarm Panel card in your HA dashboard for arm/disarm control. Sensor entities update in real-time via MQTT.</p>
+</div>
+
+<div class="card">
+<h3>3.3 Manual MQTT Topics</h3>
+<p>All topics are prefixed with <code id="mqttBase">homealarm/XXXXXX</code> (shown on the dashboard).</p>
+<table>
+<tr><th>Topic</th><th>Direction</th><th>Payload</th></tr>
+<tr><td>cmd/mode</td><td>HA → Device</td><td>DISARM, ARM_HOME, ARM_AWAY, ARM_NIGHT, ARM_VACATION, ARM_CUSTOM_BYPASS</td></tr>
+<tr><td>state</td><td>Device → HA</td><td>disarmed, armed_home, armed_away, armed_night, armed_vacation, armed_custom_bypass, pending, triggered</td></tr>
+<tr><td>cmd/relay/1..4</td><td>HA → Device</td><td>ON / OFF</td></tr>
+<tr><td>ext_sensor/1..16</td><td>HA → Device</td><td>active / idle / on / off / 1 / 0</td></tr>
+<tr><td>zones/1..8/state</td><td>Device → HA</td><td>disarmed, armed_idle, arming, disarming, alarm</td></tr>
+<tr><td>sensors/1..16/state</td><td>Device → HA</td><td>idle, active, fault</td></tr>
+<tr><td>status/relay/1..4</td><td>Device → HA</td><td>ON / OFF</td></tr>
+<tr><td>status/wifi</td><td>Device → HA</td><td>connected / ap / disconnected</td></tr>
+<tr><td>status/rssi</td><td>Device → HA</td><td>dBm value</td></tr>
+</table>
+<p style="color:var(--muted);font-size:12px;margin-top:6px">💡 For reliable arm/disarm via HA, publish <code>cmd/mode</code> with <code>retain: true</code> so the command survives MQTT reconnections.</p>
+</div>
+
+<!-- ─── 4. API & MQTT REFERENCE ─────────────────────────────────────────── -->
+<h2>4. API & MQTT Reference</h2>
+
+<div class="card">
+<h3>4.1 MQTT — External Sensor Trigger</h3>
+<p>Publish to the device's MQTT topic to activate an external sensor. No authentication required beyond MQTT broker credentials. This is the preferred method for zero-latency triggers when the device is already connected.</p>
+
+<p><strong>Topic:</strong> <code id="mqttExt">homealarm/XXXXXX/ext_sensor/1</code></p>
+<p><strong>Payload:</strong> <code>active</code>, <code>idle</code>, <code>on</code>, <code>off</code>, <code>1</code>, or <code>0</code></p>
+
+<pre><span class="c"># Activate external sensor E1 via MQTT (using mosquitto_pub)</span>
+mosquitto_pub -h MQTT_BROKER_IP -t "<span id="mqttExt2">homealarm/XXXXXX/ext_sensor/1</span>" \
+  -m "active"
+
+<span class="c"># Deactivate</span>
+mosquitto_pub -h MQTT_BROKER_IP -t "<span id="mqttExt3">homealarm/XXXXXX/ext_sensor/1</span>" \
+  -m "idle"</pre>
+
+<p style="color:var(--muted);font-size:12px;margin-top:6px">💡 Sensors 1–16 are available. Replace the number in the topic path.</p>
+</div>
+
+<div class="card">
+<h3>4.2 REST API — External Sensor Trigger</h3>
+<p>Use the API user (<code>api_user</code> / <code>api_user</code> by default) to trigger external sensors from scripts or other systems.</p>
+
+<p><strong>Step 1: Authenticate (get session cookie)</strong></p>
+<pre><span class="c"># Replace DEVICE_IP with the actual IP shown at the top of this page</span>
+COOKIE_JAR=$(mktemp)
+curl -s -c "$COOKIE_JAR" -X POST \
+  -d "user=api_user&pass=api_user" \
+  http://<span class="ip-highlight" id="ipLogin">DEVICE_IP</span>/api/login</pre>
+
+<p><strong>Step 2: Activate external sensor</strong></p>
+<pre><span class="c"># Trigger sensor E1 as active</span>
+curl -s -b "$COOKIE_JAR" \
+  "http://<span class="ip-highlight" id="ipOn">DEVICE_IP</span>/api/extsensors/trigger?id=1&state=on"</pre>
+
+<p><strong>Step 3: Deactivate external sensor</strong></p>
+<pre><span class="c"># Trigger sensor E1 as idle</span>
+curl -s -b "$COOKIE_JAR" \
+  "http://<span class="ip-highlight" id="ipOff">DEVICE_IP</span>/api/extsensors/trigger?id=1&state=off"</pre>
+
+<p style="color:var(--muted);font-size:12px;margin-top:6px">💡 Replace <code>?id=1</code> with the external sensor number (1–16). Replace <code>state=on</code> with <code>state=off</code> to deactivate.<br>
+💡 The session cookie expires after 30 minutes of inactivity. Re-authenticate if you get a 401.</p>
+</div>
+
+<div class="card">
+<h3>4.3 REST API Endpoints</h3>
+<table>
+<tr><th>Method</th><th>Endpoint</th><th>Auth</th><th>Description</th></tr>
+<tr><td>POST</td><td>/api/login</td><td>—</td><td>Authenticate (form: user, pass)</td></tr>
+<tr><td>POST</td><td>/api/logout</td><td>Session</td><td>Destroy session</td></tr>
+<tr><td>GET</td><td>/api/auth-status</td><td>—</td><td>Check auth state</td></tr>
+<tr><td>GET</td><td>/api/status</td><td>Session</td><td>Full system status JSON</td></tr>
+<tr><td>GET</td><td>/api/status-light</td><td>Session</td><td>Lightweight status (relays, zones, alarm state)</td></tr>
+<tr><td>GET/POST</td><td>/api/sensors</td><td>Admin</td><td>Sensor configuration</td></tr>
+<tr><td>GET/POST</td><td>/api/zones</td><td>Session</td><td>Zone configuration</td></tr>
+<tr><td>GET/POST</td><td>/api/extsensors</td><td>Session</td><td>External sensor configuration</td></tr>
+<tr><td>GET/POST</td><td>/api/alarmmodes</td><td>Admin</td><td>Alarm mode profiles</td></tr>
+<tr><td>GET/POST</td><td>/api/network</td><td>Admin</td><td>WiFi/MQTT configuration</td></tr>
+<tr><td>GET</td><td>/api/mode/set?mode=MODE</td><td>Session</td><td>Arm/disarm (see mode table below)</td></tr>
+<tr><td>GET</td><td>/api/extsensors/trigger?id=N&state=S</td><td>Session</td><td>Trigger external sensor (API role or higher)</td></tr>
+<tr><td>GET</td><td>/api/relay/N?state=S</td><td>Session</td><td>Manual relay control</td></tr>
+<tr><td>GET/POST</td><td>/api/relays/config</td><td>Admin</td><td>Relay configuration</td></tr>
+<tr><td>GET</td><td>/api/eventlog</td><td>Session</td><td>Event log (JSON)</td></tr>
+<tr><td>POST</td><td>/api/eventlog/clear</td><td>Admin</td><td>Clear event log</td></tr>
+<tr><td>GET</td><td>/api/backup</td><td>Admin</td><td>Download backup JSON</td></tr>
+<tr><td>POST</td><td>/api/restore</td><td>Admin</td><td>Restore from backup</td></tr>
+<tr><td>POST</td><td>/api/ota</td><td>Admin</td><td>Firmware upload (multipart form)</td></tr>
+<tr><td>GET</td><td>/api/restart</td><td>Admin</td><td>Soft restart</td></tr>
+<tr><td>GET</td><td>/api/reconnect</td><td>Admin</td><td>Reconnect WiFi</td></tr>
+<tr><td>GET</td><td>/api/users</td><td>Session</td><td>List users</td></tr>
+<tr><td>POST</td><td>/api/users/add</td><td>Admin</td><td>Add user</td></tr>
+<tr><td>POST</td><td>/api/users/delete</td><td>Admin</td><td>Delete user</td></tr>
+<tr><td>POST</td><td>/api/change-password</td><td>Session</td><td>Change own password</td></tr>
+</table>
+</div>
+
+<div class="card">
+<h3>4.4 Alarm Mode Values</h3>
+<table>
+<tr><th>Mode String</th><th>Description</th></tr>
+<tr><td>disarmed</td><td>All zones disarmed</td></tr>
+<tr><td>armed_home</td><td>Perimeter zones armed (interior excluded)</td></tr>
+<tr><td>armed_away</td><td>All zones armed</td></tr>
+<tr><td>armed_night</td><td>Bedroom perimeter armed</td></tr>
+<tr><td>armed_vacation</td><td>All zones armed (extended away)</td></tr>
+<tr><td>armed_custom_bypass</td><td>Custom zone selection</td></tr>
+</table>
+<p style="color:var(--muted);font-size:12px;margin-top:6px">💡 State values published by the device also include <code>pending</code> (arming/disarming in progress) and <code>triggered</code> (alarm active).</p>
+</div>
+
+</div>
+<script>
+fetch('/api/status').then(r=>r.json()).then(d=>{
+  document.getElementById('fwVer').textContent = d.firmware||'—';
+  document.getElementById('devId').textContent = d.device||'—';
+  let ip = d.localIP||'DEVICE_IP';
+  document.getElementById('devIp').textContent = ip;
+  document.getElementById('ipLogin').textContent = ip;
+  document.getElementById('ipOn').textContent = ip;
+  document.getElementById('ipOff').textContent = ip;
+  if(d.mqtt_base){
+    document.getElementById('mqttBase').textContent = d.mqtt_base;
+    document.getElementById('mqttExt').textContent = d.mqtt_base+'/ext_sensor/1';
+    document.getElementById('mqttExt2').textContent = d.mqtt_base+'/ext_sensor/1';
+    document.getElementById('mqttExt3').textContent = d.mqtt_base+'/ext_sensor/1';
+  }
+});
+</script>
+</body></html>)rawliteral";
+
 // ─── Login page HTML ───────────────────────────────────────────────────────
 
 static const char LOGIN_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
@@ -2121,6 +2460,7 @@ static void apiZonesConfig(AsyncWebServerRequest *req) {
       z["alarmRelayEnabled"]  = config.zones[i].alarmRelayEnabled;
       z["alarmRelayOnS"]      = config.zones[i].alarmRelayOnS;
       z["alarmRelayOffS"]     = config.zones[i].alarmRelayOffS;
+      z["alwaysArmed"]        = config.zones[i].alwaysArmed;
     // Collect associated sensor labels
     String sensList;
     sensList.reserve(200);
@@ -2166,6 +2506,7 @@ static void apiZonesConfig(AsyncWebServerRequest *req) {
       config.zones[i].alarmRelayEnabled = (req->arg((prefix + "_alarmRelayEnabled").c_str()) != "0");
       config.zones[i].alarmRelayOnS = (uint8_t)req->arg((prefix + "_alarmRelayOnS").c_str()).toInt();
       config.zones[i].alarmRelayOffS = (uint8_t)req->arg((prefix + "_alarmRelayOffS").c_str()).toInt();
+      config.zones[i].alwaysArmed = (req->arg((prefix + "_alwaysArmed").c_str()) == "1");
     }
     requestSaveConfig();
     req->send(200, "application/json", "{\"ok\":true,\"saved\":true}");
@@ -2225,6 +2566,10 @@ void initWebServer() {
   // ─── Public endpoints (no auth required) ──────────────────────────────
   server.on("/login.html", HTTP_GET, [](AsyncWebServerRequest *req) {
     req->send_P(200, "text/html", LOGIN_HTML);
+  });
+
+  server.on("/docs", HTTP_GET, [](AsyncWebServerRequest *req) {
+    req->send_P(200, "text/html", DOCS_HTML);
   });
 
   server.on("/api/login", HTTP_POST, apiLogin);

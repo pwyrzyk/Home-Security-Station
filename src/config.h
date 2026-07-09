@@ -53,7 +53,7 @@
 #define DEFAULT_MQTT_PASS   ""
 
 #define AP_SSID_PREFIX "Alarm-AP-"
-#define AP_PASS        "alarm123"   // 8-char minimum for WPA2; change via UI
+#define AP_PASS        "12345678"   // 8-char minimum for WPA2; change via UI
 
 #define OTA_PORT    3232
 #define OTA_PASSWORD ""             // empty = OTA disabled; set via UI/build flags
@@ -174,7 +174,8 @@ enum InputAction : uint8_t {
   INPUT_ACTION_DISARM_ZONE= 2,
   INPUT_ACTION_TOGGLE_ZONE= 3,
   INPUT_ACTION_ARM_ALL    = 4,
-  INPUT_ACTION_DISARM_ALL = 5
+  INPUT_ACTION_DISARM_ALL = 5,
+  INPUT_ACTION_PANIC      = 6    // triggers panic alarm via E16 always-armed zone
 };
 
 // ─── Per-sensor configuration ──────────────────────────────────────────────
@@ -207,6 +208,7 @@ struct ZoneConfig {
   bool alarmRelayEnabled;   // zone can trigger alarm/pulse relay (PULSE_MODE)
   uint8_t alarmRelayOnS;    // 0..255, alarm relay ON time (0=use hardcoded 10s)
   uint8_t alarmRelayOffS;   // 0..255, alarm relay OFF time (0=use hardcoded 60s)
+  bool alwaysArmed;         // zone cannot be disarmed — used for panic/24h zones
 };
 
 // ─── Relay configuration ───────────────────────────────────────────────────

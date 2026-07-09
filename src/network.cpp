@@ -180,6 +180,7 @@ void wifiStationRetryLoop() {
         apMode = false;
         wifiRetryCount = 0;
         wifiRetryNextMs = 0;
+        WiFi.setSleep(false);  // re-assert after mode switch from AP
         if (!connectWiFiStation()) {
           // Failed to connect despite seeing SSID — keep trying
           wifiRetryCount = 1;

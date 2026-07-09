@@ -99,7 +99,16 @@ static void syncRelays() {
   for (int r = 0; r < MAX_RELAYS; r++) {
     if (relayManualOverride[r]) { anyManualOverride = true; break; }
   }
-  if (alarmCtx.globalState == AlarmState::DISARMED && !anyManualOverride) {
+  // Always-armed zones (panic/24h) can be in ZONE_ALARM even when the
+  // global alarm state is DISARMED. Skip the fast-path only if no such
+  // zone exists — otherwise we must scan for alarm state every iteration.
+  bool anyAlwaysArmed = false;
+  for (int z = 0; z < MAX_ZONES; z++) {
+    if (config.zones[z].alwaysArmed && config.zones[z].enabled) {
+      anyAlwaysArmed = true; break;
+    }
+  }
+  if (alarmCtx.globalState == AlarmState::DISARMED && !anyManualOverride && !anyAlwaysArmed) {
     if (relaysKnownOff) return;  // still disarmed, relays already OFF — nothing to do
     // otherwise fall through to sync (first call after state change)
   }
@@ -331,6 +340,21 @@ static void processDigitalInputs() {
       case INPUT_ACTION_DISARM_ALL:
         disarmAllZones();
         break;
+      case INPUT_ACTION_PANIC:
+        // Toggle external sensor E16 to trigger always-armed zone
+        {
+          uint8_t eIdx = 15;  // E16 (index 15)
+          bool wasActive = extSensorStates[eIdx].active;
+          extSensorStates[eIdx].active = !wasActive;
+          extSensorStates[eIdx].lastChangeMs = millis();
+          updateZoneSensorCache();
+          char logBuf[64];
+          snprintf(logBuf, sizeof(logBuf), "E16 '%s' -> %s (PANIC button)",
+                   config.extSensors[eIdx].name,
+                   extSensorStates[eIdx].active ? "ACTIVE" : "IDLE");
+          logSensor(logBuf);
+        }
+        break;
       default:
         break;
     }
@@ -355,7 +379,11 @@ void alarmLoop() {
     switch (zs.alarmState) {
       // ─── DISARMED ─────────────────────────────────────────────────────
       case ZONE_DISARMED:
-        // Nothing to evaluate; stay disarmed
+        // Auto-arm always-armed zones (panic/24h) — they must never
+        // stay disarmed, even right after boot or mode transitions.
+        if (zc.alwaysArmed && zc.enabled) {
+          zoneArmNoSave(zoneId);
+        }
         break;
 
       // ─── ARMING (exit delay active) ────────────────────────────────────
@@ -393,7 +421,13 @@ void alarmLoop() {
 
       // ─── ALARM ────────────────────────────────────────────────────────
       case ZONE_ALARM:
-        // Siren timing handled entirely by syncRelays() — nothing to do here
+        // Auto-clear for always-armed zones: when all sensors go idle,
+        // transition back to ARMED_IDLE so the zone stays monitored.
+        if (zc.alwaysArmed && !zoneSensorTripped(zoneId)) {
+          setZoneAlarmState(zoneId, ZONE_ARMED_IDLE);
+          zs.alarmEnteredMs = 0;
+          zs.armedAtMs = now;  // reset settle grace period
+        }
         break;
 
       default:

@@ -35,6 +35,8 @@ void zoneArmNoSave(uint8_t zoneId) {
 void zoneDisarmNoSave(uint8_t zoneId) {
   if (zoneId < 1 || zoneId > MAX_ZONES) return;
   uint8_t idx = zoneId - 1;
+  // Always-armed zones (panic/24h) cannot be disarmed
+  if (config.zones[idx].alwaysArmed) return;
   zoneStates[idx].armed = false;
   zoneStates[idx].alarmState = ZONE_DISARMED;
   zoneStates[idx].preAlarmStartMs = 0;
@@ -70,7 +72,9 @@ void armAllZones() {
 
 void disarmAllZones() {
   lastZoneCmdSource = "system";
-  for (uint8_t i = 1; i <= MAX_ZONES; i++) zoneDisarmNoSave(i);
+  for (uint8_t i = 1; i <= MAX_ZONES; i++) {
+    if (!config.zones[i - 1].alwaysArmed) zoneDisarmNoSave(i);
+  }
   saveArmedState();  // single persist after batch
 }
 
