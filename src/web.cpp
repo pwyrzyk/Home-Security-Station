@@ -733,7 +733,6 @@ small{color:var(--muted);font-size:12px}
 <div class="card"><h2>External Sensors</h2><div id="extensors">Loading...</div></div>
 </div>
 <div id="page-extsensors" class="page"><h1>External Sensor Configuration</h1>
-<div id="extSubtitle" style="font-size:11px;color:#86868b;margin-bottom:16px">Loading...</div>
 <div id="extCards">Loading...</div>
 <div style="margin-top:12px">
 <button class="btn btn-save" onclick="saveExtSensors()">Save All External</button>
@@ -1060,6 +1059,7 @@ function renderAlertBanner(){
   if(ss.active>0){
     let activeList=[];
     if(d.sensors) d.sensors.forEach(s=>{ if(s.state==='active') activeList.push(s.name||('T'+s.id)); });
+    if(d.ext_sensors) d.ext_sensors.forEach(e=>{ if(e.active) activeList.push(e.name||('E'+e.id)); });
     el.className='alert-banner danger';
     el.style.display='flex';
     el.innerHTML='<div class="ab-icon">🚨</div><div class="ab-text"><strong>'+ss.active+' Active Sensor'+(ss.active>1?'s':'')+'</strong><div class="ab-list">'+activeList.join(', ')+'</div></div>';
@@ -1195,7 +1195,7 @@ function renderExtSensors(a){
       let stateCls=en?(e.active?'active-state':''):'';
       h+=`<div class="ext-box ${st}">
 <span class="edot ${en?(e.active?'active':'idle'):'disabled'}"></span>
-<span class="elabel">E${e.id}</span>
+<span class="elabel">E${e.id}${e.id===16?'-SOS':''}</span>
 <span class="estate ${stateCls}">${en?(e.active?'ACTIVE':'IDLE'):'OFF'}</span>
 </div>`;
     }
@@ -1416,7 +1416,6 @@ async function renderExtCards(a){
 async function loadExtSensors(){
   const r=await fetch('/api/extsensors');
   renderExtCards(await r.json());
-  if(data.mqtt_base) document.getElementById('extSubtitle').innerHTML='<strong>MQTT Topic:</strong> '+data.mqtt_base+'/ext_sensor/1..16 | Payload: active/idle (on/off)<br><strong>REST API:</strong><br><span style="font-family:monospace;font-size:10px">COOKIE_JAR=$(mktemp)</span><br><span style="font-family:monospace;font-size:10px">curl -s -c "$COOKIE_JAR" -X POST -d "user=api_user&pass=api_user" http://alarm.local/api/login</span><br><span style="font-family:monospace;font-size:10px">curl -s -b "$COOKIE_JAR" "http://alarm.local/api/extsensors/trigger?id=1&state=on"</span><br><span style="font-family:monospace;font-size:10px">curl -s -b "$COOKIE_JAR" "http://alarm.local/api/extsensors/trigger?id=1&state=off"</span>';
 }
 async function saveExtSensors(){
   const body=new URLSearchParams();
@@ -1849,7 +1848,7 @@ nav a{color:var(--muted);font-size:14px;font-weight:500}
 <tr><td>5</td><td>Relay Siren</td><td>Active LOW (LOW=ON)</td></tr>
 <tr><td>6</td><td>Relay Pulse</td><td>Active LOW</td></tr>
 <tr><td>7</td><td>Relay Tamper</td><td>Active LOW</td></tr>
-<tr><td>8</td><td>Digital In ARM ZONE</td><td>Active LOW, ext. pull-up to 3.3V</td></tr>
+<tr><td>8</td><td>Digital In SOS Panic</td><td>Active LOW (press toggle panico), ext. pull-up 3.3V</td></tr>
 <tr><td>9</td><td>Digital In DISARM ALL</td><td>Active LOW, ext. pull-up to 3.3V</td></tr>
 <tr><td>10</td><td>Relay No-Power</td><td>Active LOW</td></tr>
 <tr><td>20</td><td>Prealarm Output</td><td>Digital OUT</td></tr>
@@ -1923,13 +1922,32 @@ nav a{color:var(--muted);font-size:14px;font-weight:500}
 <li><strong>Alarm relay cycle:</strong> ON/OFF times for the pulse relay during alarm.</li>
 <li><strong>Siren checkbox:</strong> Enable siren relay for this zone.</li>
 <li><strong>Alarm Relay checkbox:</strong> Enable pulse relay for this zone.</li>
+<li><strong>Always Armed:</strong> If checked, the zone stays permanently armed and <strong>cannot be disarmed</strong>. Any sensor trigger immediately fires the alarm (no entry/exit delay). The zone auto-clears to armed-idle when all sensors return to idle. This is designed for panic/24h zones — it works even when the system is in DISARMED mode. Use with caution — a confirmation prompt appears when enabling.</li>
 </ul></li>
 <li>Click <strong>Update</strong> to save each zone, or <strong>Save All Zones</strong> to save all.</li>
 </ol>
 </div>
 
 <div class="card">
-<h3>2.5 Alarm Mode Profiles</h3>
+<h3>2.5 SOS Panic / Always-Armed Zones</h3>
+<p>The device supports a special <strong>panic alarm</strong> mode using an always-armed zone.</p>
+<p><strong>How it works:</strong></p>
+<ol>
+<li>Zone 8 "Panic" is pre-configured with <code>alwaysArmed=true</code> — it is always monitoring and can never be disarmed.</li>
+<li>External sensor E16 "Panic" is assigned to Z8 as the trigger.</li>
+<li>When E16 is activated (via Dashboard button, MQTT, REST API, or GPIO8 digital input), Z8 enters ALARM → siren + alarm relay fire according to Z8's zone configuration.</li>
+<li>When E16 is deactivated, Z8 auto-clears to ARMED_IDLE → siren stops immediately.</li>
+<li>The <strong>Dashboard 🆘 Panic button</strong> toggles E16 on/off — press once to activate, again to deactivate.</li>
+<li>In Home Assistant, a <strong>SOS Panic switch</strong> entity is auto-discovered — toggle ON to trigger, OFF to stop.</li>
+<li>GPIO8 (Digital Input 1) is pre-configured as PANIC action — each press toggles E16 state.</li>
+</ol>
+<p style="color:var(--muted);font-size:12px;margin-top:6px">💡 Configure Z8's siren and alarm relay timing in the Zones tab to control how the panic alarm behaves. You can also assign additional always-armed zones for other 24/7 monitoring needs (smoke detectors, flood sensors, etc.).<br>
+💡 To trigger panic via MQTT: publish <code>active</code> to <code>ext_sensor/16</code> (ON) or <code>idle</code> (OFF). No authentication required beyond MQTT credentials.<br>
+💡 To trigger panic via REST API: authenticate first, then call <code>/api/extsensors/trigger?id=16&state=on</code>.</p>
+</div>
+
+<div class="card">
+<h3>2.6 Alarm Mode Profiles</h3>
 <ol>
 <li>Go to <strong>Alarm Modes</strong> tab.</li>
 <li>For each mode (Armed Home, Armed Away, Armed Night, Armed Vacation, Custom Bypass), check which zones should be active.</li>
@@ -1983,8 +2001,8 @@ nav a{color:var(--muted);font-size:14px;font-weight:500}
 <tr><td>alarm_control_panel.home_alarm</td><td>Alarm Panel</td><td>Arm/disarm with modes: disarmed, armed_home, armed_away, armed_night, armed_vacation, armed_custom_bypass</td></tr>
 <tr><td>binary_sensor.*</td><td>Binary Sensor (×16)</td><td>One per wired sensor input (T1–T16). State: on/off</td></tr>
 <tr><td>binary_sensor.*</td><td>Binary Sensor (×16)</td><td>One per external MQTT sensor (E1–E16)</td></tr>
-<tr><td>switch.*</td><td>Switch (×4)</td><td>Relay control (Siren, Pulse, Tamper, No-Power)</td></tr>
-<tr><td>sensor.*</td><td>Sensor</td><td>WiFi RSSI, uptime, heap free</td></tr>
+<tr><td>switch.*</td><td>Switch (×5)</td><td>Relay control (Siren, Alarm, Tamper, No-Power) + SOS Panic (E16 trigger)</td></tr>
+<tr><td>sensor.*</td><td>Sensor</td><td>WiFi RSSI, uptime, heap free, panic state</td></tr>
 </table>
 <p style="color:var(--muted);font-size:12px;margin-top:6px">💡 Use the Alarm Panel card in your HA dashboard for arm/disarm control. Sensor entities update in real-time via MQTT.</p>
 </div>
@@ -2003,6 +2021,7 @@ nav a{color:var(--muted);font-size:14px;font-weight:500}
 <tr><td>status/relay/1..4</td><td>Device → HA</td><td>ON / OFF</td></tr>
 <tr><td>status/wifi</td><td>Device → HA</td><td>connected / ap / disconnected</td></tr>
 <tr><td>status/rssi</td><td>Device → HA</td><td>dBm value</td></tr>
+<tr><td>status/ext_sensor/16</td><td>Device → HA</td><td>active / idle (panic sensor state)</td></tr>
 </table>
 <p style="color:var(--muted);font-size:12px;margin-top:6px">💡 For reliable arm/disarm via HA, publish <code>cmd/mode</code> with <code>retain: true</code> so the command survives MQTT reconnections.</p>
 </div>
