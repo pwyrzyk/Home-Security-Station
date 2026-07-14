@@ -11,6 +11,11 @@
 WiFiClient wifiClient;
 PubSubClient mqtt(wifiClient);
 
+// Reduce TCP socket timeout from default 5s to 1s so that a failed
+// mqtt.connect() does not block the main loop long enough to starve
+// ArduinoOTA.handle() and cause espota uploads to time out.
+static bool _mqttTimeoutSet = false;
+
 // ─── Extern from ha_discovery.cpp ──────────────────────────────────────────
 extern void haPublishAllDiscoveries();
 
@@ -94,6 +99,14 @@ void pub(const String& subtopic, const String& value) {
 void connectMQTT() {
   if (WiFi.status() != WL_CONNECTED || apMode) return;
   if (mqtt.connected()) { mqttBackoff = 1000; return; }
+
+  // Set TCP socket timeout to 1s (once) so mqtt.connect() doesn't block
+  // the loop for 5s when the broker is unreachable — that starvation
+  // prevents ArduinoOTA from completing the espota handshake.
+  if (!_mqttTimeoutSet) {
+    wifiClient.setTimeout(1);   // seconds
+    _mqttTimeoutSet = true;
+  }
 
   uint32_t now = millis();
   if (now < mqttRetryAt) return;

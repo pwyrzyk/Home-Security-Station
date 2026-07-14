@@ -58,7 +58,9 @@
 #define AP_PASS        "12345678"   // 8-char minimum for WPA2; change via UI
 
 #define OTA_PORT    3232
+#ifndef OTA_PASSWORD
 #define OTA_PASSWORD ""             // empty = OTA disabled; set via UI/build flags
+#endif
 #define OTA_HOSTNAME "alarm"
 
 #define NTP_SERVER      "pool.ntp.org"

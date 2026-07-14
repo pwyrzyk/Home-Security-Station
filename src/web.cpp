@@ -1167,7 +1167,10 @@ async function load(){
     renderExtSensors(data.ext_sensors);
   }
     if(data.apMode) document.getElementById('apInfo').style.display='block';
-  }catch(e){}
+  }catch(e){
+    data.wifi='disconnected';
+    renderHeroStatus();
+  }
   _pendingLoad=false;
 }
 
