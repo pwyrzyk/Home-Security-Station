@@ -200,6 +200,30 @@ static void publishSwitchRelay(uint8_t relayIdx) {
   publishDiscoveryPayload(cfgTopic, doc);
 }
 
+// ─── Panic switch (controls E16 external sensor via HA switch entity) ──────
+
+static void publishPanicSwitch() {
+  JsonDocument doc;
+  String uid = deviceId + "-panic";
+
+  doc["~"]            = mqttBase;
+  doc["uniq_id"]      = uid;
+  doc["name"]         = "SOS Panic";
+  doc["stat_t"]       = "~/status/ext_sensor/16";
+  doc["cmd_t"]        = "~/ext_sensor/16";
+  doc["avty_t"]       = "~/status/running";
+  doc["pl_avail"]     = "true";
+  doc["pl_not_avail"] = "false";
+  doc["pl_on"]        = "active";
+  doc["pl_off"]       = "idle";
+  addDeviceInfo(doc);
+
+  String cfgTopic = String(config.haDiscoveryPrefix) + "/switch/" + uid + "/config";
+  mqtt.publish(cfgTopic.c_str(), "", true);  // clear any stale config first
+  yield();
+  publishDiscoveryPayload(cfgTopic, doc);
+}
+
 // ─── Cleanup: delete stale old-style per-zone alarm panels ─────────────────
 
 static void cleanupStaleDiscoveries() {
@@ -262,6 +286,10 @@ void haPublishAllDiscoveries() {
     publishSwitchRelay(r);
     mqtt.loop();
   }
+
+  // Panic switch (controls E16 external sensor)
+  publishPanicSwitch();
+  mqtt.loop();
 
   logSystem("HA autodiscovery: complete");
 }
