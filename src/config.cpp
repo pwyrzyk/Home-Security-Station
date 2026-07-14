@@ -171,7 +171,7 @@ void setDefaults() {
 // Async web handlers call requestSaveConfig() instead of saveConfig() to
 // avoid blocking the async TCP thread with a multi-hundred-ms EEPROM write.
 // configSaveLoop() (called from main loop) performs the actual write.
-static volatile bool configSavePending = false;
+static bool configSavePending = false;
 
 void requestSaveConfig() {
   configSavePending = true;
@@ -184,27 +184,8 @@ void configSaveLoop() {
 }
 
 void saveConfig() {
-  // Use LittleFS for reliable persistence (EEPROM emulation on ESP32-C3
-  // can silently lose data on power cycles). LittleFS is wear-leveled
-  // and power-fail safe.
-  File f = LittleFS.open("/config.bin", "w");
-  if (!f) {
-    Serial.println("[CFG] Failed to open /config.bin for writing!");
-    // Fallback to EEPROM if LittleFS fails
-    EEPROM.put(0, config);
-    EEPROM.commit();
-    return;
-  }
-  size_t written = f.write((uint8_t*)&config, sizeof(config));
-  f.close();
-  if (written != sizeof(config)) {
-    Serial.println("[CFG] LittleFS write incomplete — trying EEPROM fallback");
-    EEPROM.put(0, config);
-    EEPROM.commit();
-  } else {
-    Serial.printf("[CFG] Config saved to LittleFS (%u bytes, SSID='%s')\n",
-                  (unsigned)sizeof(config), config.wifiSsid);
-  }
+  EEPROM.put(0, config);
+  EEPROM.commit();
 }
 
 // ─── Power-fail state persistence ──────────────────────────────────────────
@@ -292,11 +273,9 @@ void restoreArmedState() {
 }
 
 void loadConfig() {
-  // Initialize LittleFS first — config is stored here for reliability
   LittleFS.begin(true);
-
-  // Also init EEPROM for armed-state blob (separate from main config)
   EEPROM.begin(EEPROM_SIZE);
+  EEPROM.get(0, config);
 
   bool loadedFromLittleFS = false;
 
@@ -375,7 +354,6 @@ void loadConfig() {
   bool     _savedValid = config.stateRestoreValid;
 
   if (config.magic != EEPROM_MAGIC) {
-    Serial.println("[CFG] Magic mismatch — applying defaults");
     setDefaults();
     saveConfig();
   }

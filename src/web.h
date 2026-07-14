@@ -11,8 +11,8 @@ void initWebServer();
 // ─── Deferred actions (set by async handlers, executed in loop) ───────────
 // Async handlers must not block (delay/WiFi.disconnect). They set these flags
 // and webLoop() performs the actual work from the main loop context.
-extern volatile bool pendingRestart;
-extern volatile bool pendingReconnect;
+extern bool pendingRestart;
+extern bool pendingReconnect;
 
 // Deferred external-sensor trigger (set by /api/extsensors/trigger handler).
 // Mutating extSensorStates[] from the async TCP task races with sensorsLoop();

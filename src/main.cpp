@@ -44,8 +44,13 @@ void setup() {
     dinputStates[i] = false;
   }
 
-  // ─── LittleFS is already mounted in loadConfig() (needed for config storage)
-  Serial.println("[BOT] LittleFS already mounted (via loadConfig)");
+  // ─── LittleFS (must be before WiFi — so WiFi events can be logged) ──
+  Serial.println("[BOT] Mounting LittleFS...");
+  if (!LittleFS.begin(true)) {
+    Serial.println("[BOT] LittleFS mount failed!");
+  } else {
+    Serial.println("[BOT] LittleFS mounted");
+  }
 
   Serial.println("[BOT] Init event log...");
   eventLogInit();

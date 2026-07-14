@@ -71,15 +71,9 @@ void sensorsLoop() {
     } else if (inStandby) {
       // idle — both flags false
     } else {
-      // Hysteresis zone: between ranges. Only maintain active/fault when
-      // the value is below the corresponding range (gap between standby and
-      // detect/fault). Values above detectMax/faultMax fall to idle — a
-      // voltage exceeding the active threshold upper limit is NOT active.
-      if (st.state == SENSOR_ACTIVE && raw < cfg.detectMin) {
-        rawActive = true;
-      } else if (st.state == SENSOR_FAULT && raw < cfg.faultMin) {
-        rawFault = true;
-      }
+      // hysteresis zone: between ranges — keep last state
+      rawActive = (st.state == SENSOR_ACTIVE);
+      rawFault  = (st.state == SENSOR_FAULT);
     }
 
     if (cfg.invert) {

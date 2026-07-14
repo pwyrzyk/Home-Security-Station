@@ -15,24 +15,19 @@
 AsyncWebServer server(HTTP_PORT);
 
 // ─── Deferred action flags (set by async handlers, executed in webLoop) ───
-volatile bool pendingRestart  = false;
-volatile bool pendingReconnect = false;
+bool pendingRestart  = false;
+bool pendingReconnect = false;
 PendingExtSensorTrigger pendingExtTrigger = {false, 0, false};
 PendingRelayCommand     pendingRelayCmd   = {false, 0, false};
 
 void webLoop() {
   if (pendingRestart) {
     pendingRestart = false;
-    saveConfig();   // force flush any pending config changes before reboot
-    delay(100);     // allow HTTP response to flush
+    delay(100);   // allow HTTP response to flush
     ESP.restart();
   }
   if (pendingReconnect) {
     pendingReconnect = false;
-    if (apMode) {
-      WiFi.softAPdisconnect(true);  // turn off AP before trying STA
-      apMode = false;
-    }
     WiFi.disconnect();
     delay(500);
     ensureWiFiMode();
@@ -115,13 +110,7 @@ static void apiStatus(AsyncWebServerRequest *req) {
         case SENSOR_FAULT:  fault++;  break;
       }
     }
-    // Include external sensors in the active count
-    int extActive = 0;
-    for (int i = 0; i < MAX_EXT_SENSORS; i++) {
-      if (config.extSensors[i].enabled && extSensorStates[i].active) extActive++;
-    }
-    ss["idle"] = idle; ss["active"] = active + extActive; ss["fault"] = fault;
-    ss["intActive"] = active; ss["extActive"] = extActive;
+    ss["idle"] = idle; ss["active"] = active; ss["fault"] = fault;
   }
 
   // ─── Last trigger info ───────────────────────────────────────────────
@@ -233,7 +222,6 @@ static void apiSensorsConfig(AsyncWebServerRequest *req) {
       s["standbyMin"] = config.sensors[i].standbyMin;
       s["standbyMax"] = config.sensors[i].standbyMax;
       s["detectMin"]  = config.sensors[i].detectMin;
-      s["detectMax"]  = config.sensors[i].detectMax;
       s["faultMin"]   = config.sensors[i].faultMin;
       s["faultMax"]   = config.sensors[i].faultMax;
       s["invert"]     = config.sensors[i].invert;
@@ -322,18 +310,12 @@ static void apiNetworkConfig(AsyncWebServerRequest *req) {
     req->send(200, "application/json", buf);
   } else if (req->method() == HTTP_POST) {
     if (req->hasArg("wifiSsid"))  strlcpy(config.wifiSsid, req->arg("wifiSsid").c_str(), sizeof(config.wifiSsid));
-    if (req->hasArg("wifiPass")) {
-      String pass = req->arg("wifiPass");
-      // Don't overwrite real password with the masked placeholder "****"
-      if (pass != "****") {
-        strlcpy(config.wifiPass, pass.c_str(), sizeof(config.wifiPass));
-      }
-    }
+    if (req->hasArg("wifiPass"))  strlcpy(config.wifiPass, req->arg("wifiPass").c_str(), sizeof(config.wifiPass));
     if (req->hasArg("mqttServer")) strlcpy(config.mqttServer, req->arg("mqttServer").c_str(), sizeof(config.mqttServer));
     if (req->hasArg("mqttPort"))  config.mqttPort = req->arg("mqttPort").toInt();
     if (req->hasArg("mqttUser"))  strlcpy(config.mqttUser, req->arg("mqttUser").c_str(), sizeof(config.mqttUser));
     if (req->hasArg("mqttPass"))  strlcpy(config.mqttPass, req->arg("mqttPass").c_str(), sizeof(config.mqttPass));
-    saveConfig();  // synchronous — WiFi creds must persist before restart
+    requestSaveConfig();
     req->send(200, "application/json", "{\"ok\":true,\"saved\":true}");
   }
 }
@@ -725,6 +707,7 @@ small{color:var(--muted);font-size:12px}
 <button class="qa-btn qa-disarm" onclick="quickDisarmAll()">🔓 Disarm All</button>
 </div>
 <div class="stat-grid" id="statGrid">Loading...</div>
+<div class="info-cards" id="infoCards">Loading...</div>
 <div class="card"><h2>Alarm Mode</h2><div class="mode-cards" id="modeGrid">Loading...</div></div>
 <div class="card" id="recentEventsCard" style="display:none"><h2>Recent Events</h2><div class="recent-events" id="recentEvents"></div></div>
 <div class="card"><h2>Zones</h2><div id="zones">Loading...</div></div>
@@ -1006,7 +989,7 @@ function renderHeroStatus(){
   let wifiOk = d.wifi==='connected';
   let state = d.globalState||'disarmed';
   let cls = wifiOk ? (state==='triggered'?'alarm':(state==='disarmed'?'ready':(state==='pending'?'pending':'ready'))) : 'down';
-  let icon = wifiOk ? (state==='triggered'?'🚨':(state==='disarmed'?'✅':(state==='pending'?'⏳':'🔒'))) : '❌';
+  let icon = wifiOk ? (state==='triggered'?'\U0001F6A8':(state==='disarmed'?'\u2705':(state==='pending'?'\u23f3':'\U0001F512'))) : '\u274c';
   let title = wifiOk ? (state==='triggered'?'Alarm Active':(state==='disarmed'?'System Ready':(state==='pending'?'Arming...':'System Armed'))) : 'WiFi Down';
   let sub = wifiOk ? (d.activeMode ? modeLabels[d.activeMode] : '') : 'Check network connection';
   let h='<div class="hero-icon">'+icon+'</div>';
@@ -1086,7 +1069,9 @@ function renderZoneSummary(){
 }
 
 function renderQuickActions(){
+  let d=data;
   let el=document.getElementById('quickActions');
+  if(d.globalState==='triggered'){ el.style.display='none'; return; }
   el.style.display='flex';
 }
 
@@ -1766,7 +1751,6 @@ async function loadFast() {
     renderAlertBanner();
     renderZoneSummary();
     renderQuickActions();
-    renderStatTiles();
     renderModeGrid();
     if (_authRole === 0) { renderRelays(data.relays); renderZones(data.zones); }
   } catch (e) {}
