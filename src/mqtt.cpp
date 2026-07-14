@@ -353,13 +353,6 @@ void publishStatus() {
     }
   }
 
-  // E16 panic sensor state (for HA panic switch feedback — always publish
-  // retained so HA discovery can find it even without the switch being toggled)
-  {
-    String state = extSensorStates[15].active ? "active" : "idle";
-    pub("status/ext_sensor/16", state);
-  }
-
   // System
   String wifi = wifiConnected ? "connected" : (apMode ? "ap" : "disconnected");
   if (!cacheEq(cacheWifiStatus, wifi.c_str())) {

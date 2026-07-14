@@ -682,17 +682,6 @@ void loadConfig() {
     saveConfig();
   }
 
-  // ─── Sanitize HA discovery prefix after struct migration ──────────────────
-  // Always force the prefix to "homeassistant" on boot. There is no UI to
-  // change it, and struct migration corrupts the tail (haDiscoveryPrefix + users
-  // are the last fields). A corrupted prefix sends discovery to wrong topics.
-  if (strcmp(config.haDiscoveryPrefix, "homeassistant") != 0) {
-    strlcpy(config.haDiscoveryPrefix, "homeassistant", sizeof(config.haDiscoveryPrefix));
-    config.haDiscoveryEnabled = true;
-    saveConfig();
-    Serial.println("[BOT] HA discovery prefix reset to homeassistant");
-  }
-
   // Initialize runtime state
   for (int i = 0; i < TOTAL_SENSORS; i++) {
     sensorStates[i].state  = SENSOR_IDLE;
