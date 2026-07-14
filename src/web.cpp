@@ -87,9 +87,10 @@ static void apiStatus(AsyncWebServerRequest *req) {
 
   root["device"]    = deviceId;
   root["firmware"]  = FIRMWARE_VERSION;
+  root["buildDate"] = BUILD_DATE;
   root["mqtt_base"] = mqttBase;
-  root["wifi"]     = wifiConnected ? "connected" : (apMode ? "ap" : "disconnected");
-  root["rssi"]     = wifiConnected ? WiFi.RSSI() : 0;
+  root["wifi"]     = (WiFi.status() == WL_CONNECTED) ? "connected" : (apMode ? "ap" : "disconnected");
+  root["rssi"]     = (WiFi.status() == WL_CONNECTED) ? WiFi.RSSI() : 0;
   root["apMode"]   = apMode;
   root["uptime"]   = millis() / 1000;
   root["heapFree"] = ESP.getFreeHeap();
@@ -987,11 +988,25 @@ function fmDur(s){
 function renderHeroStatus(){
   let d=data;
   let wifiOk = d.wifi==='connected';
+  let isAP = d.wifi==='ap';
   let state = d.globalState||'disarmed';
-  let cls = wifiOk ? (state==='triggered'?'alarm':(state==='disarmed'?'ready':(state==='pending'?'pending':'ready'))) : 'down';
-  let icon = wifiOk ? (state==='triggered'?'\U0001F6A8':(state==='disarmed'?'\u2705':(state==='pending'?'\u23f3':'\U0001F512'))) : '\u274c';
-  let title = wifiOk ? (state==='triggered'?'Alarm Active':(state==='disarmed'?'System Ready':(state==='pending'?'Arming...':'System Armed'))) : 'WiFi Down';
-  let sub = wifiOk ? (d.activeMode ? modeLabels[d.activeMode] : '') : 'Check network connection';
+  let cls, icon, title, sub;
+  if (wifiOk) {
+    cls   = state==='triggered'?'alarm':(state==='disarmed'?'ready':(state==='pending'?'pending':'ready'));
+    icon  = state==='triggered'?'\uD83D\uDEA8':(state==='disarmed'?'\u2705':(state==='pending'?'\u23f3':'\uD83D\uDD12'));
+    title = state==='triggered'?'Alarm Active':(state==='disarmed'?'System Ready':(state==='pending'?'Arming...':'System Armed'));
+    sub   = d.activeMode ? modeLabels[d.activeMode] : '';
+  } else if (isAP) {
+    cls   = 'pending';
+    icon  = '\uD83D\uDCE1';
+    title = 'AP Mode';
+    sub   = 'Connect to '+d.localIP+' to configure WiFi';
+  } else {
+    cls   = 'down';
+    icon  = '\u274c';
+    title = 'WiFi Down';
+    sub   = 'Check network connection';
+  }
   let h='<div class="hero-icon">'+icon+'</div>';
   h+='<div class="hero-text"><div class="hero-title">'+title+'</div><div class="hero-sub">'+sub+'</div></div>';
   h+='<div class="hero-dot"></div>';
@@ -1019,13 +1034,20 @@ function renderStatTiles(){
   tiles.push({icon:'🔌',title:'Relays',accent:'blue',value:relayRows,sub:''});
   let heapIcon = d.heapFree>80000?'🟢':d.heapFree>50000?'🟡':d.heapFree>25000?'🟠':'🔴';
   tiles.push({icon:'🔧',title:'System',accent:'muted',
-    value:'<div class="st-row">'+d.firmware+'</div><div class="st-row">Up: '+fmDur(d.uptime)+'</div><div class="st-row">'+heapIcon+' '+(d.heapFree/1024).toFixed(0)+' KB free</div>',
+    value:'<div class="st-row">'+d.firmware+'</div><div class="st-row" style="font-size:10px;color:var(--muted)">Built: '+(d.buildDate||'')+'</div><div class="st-row">Up: '+fmDur(d.uptime)+'</div><div class="st-row">'+heapIcon+' '+(d.heapFree/1024).toFixed(0)+' KB free</div>',
     sub:d.device});
   let nAccent = d.mqttConnected?'green':(d.wifi==='connected'?'yellow':'red');
-  let rssiQ = d.rssi>=-50?'excellent':d.rssi>=-65?'good':d.rssi>=-75?'fair':'weak';
-  let cqHtml='<div class="conn-quality"><div class="cq-bar">';
-  for(let i=0;i<4;i++) cqHtml+='<div class="cq-seg '+(i<=(['weak','fair','good','excellent'].indexOf(rssiQ))?'active '+rssiQ:'')+'"></div>';
-  cqHtml+='</div><span class="cq-label">'+d.rssi+' dBm</span></div>';
+  let cqHtml='';
+  if (d.wifi==='connected') {
+    let rssiQ = d.rssi>=-50?'excellent':d.rssi>=-65?'good':d.rssi>=-75?'fair':'weak';
+    cqHtml='<div class="conn-quality"><div class="cq-bar">';
+    for(let i=0;i<4;i++) cqHtml+='<div class="cq-seg '+(i<=(['weak','fair','good','excellent'].indexOf(rssiQ))?'active '+rssiQ:'')+'"></div>';
+    cqHtml+='</div><span class="cq-label">'+d.rssi+' dBm</span></div>';
+  } else {
+    cqHtml='<div class="conn-quality"><div class="cq-bar">';
+    for(let i=0;i<4;i++) cqHtml+='<div class="cq-seg"></div>';
+    cqHtml+='</div><span class="cq-label">Disconnected</span></div>';
+  }
   tiles.push({icon:'🌐',title:'Network',accent:nAccent,
     value:'<div class="st-row">'+(d.ssid||'WiFi')+'</div>'+cqHtml+'<div class="st-row">MQTT '+(d.mqttConnected?'✅':'❌')+' · HA '+(d.haEnabled?'✅':'❌')+'</div>',
     sub:d.localIP||''});
@@ -1071,22 +1093,29 @@ function renderZoneSummary(){
 function renderQuickActions(){
   let d=data;
   let el=document.getElementById('quickActions');
-  if(d.globalState==='triggered'){ el.style.display='none'; return; }
   el.style.display='flex';
+  // Sync panic button label with E16 state
+  let panicBtn=document.getElementById('panicBtn');
+  if(panicBtn && d.ext_sensors && d.ext_sensors.length>=16){
+    panicBtn.innerHTML = d.ext_sensors[15].active ? '🛑 Panic OFF' : '🆘 Panic';
+  }
 }
 
 async function quickPanic(){
-  // Toggle E16 sensor: if currently active → deactivate; if idle → activate
   let isActive = false;
   if (data.ext_sensors && data.ext_sensors.length >= 16) {
     isActive = data.ext_sensors[15].active;
   }
   let newState = isActive ? 'off' : 'on';
   await fetch('/api/extsensors/trigger?id=16&state=' + newState);
-  // Update button label immediately (optimistic, before reload)
+  // Optimistic UI update — don't call load() so button stays visible
+  if (newState === 'on') {
+    data.ext_sensors[15].active = true;
+  } else {
+    data.ext_sensors[15].active = false;
+  }
   let btn = document.getElementById('panicBtn');
   if (btn) btn.innerHTML = newState === 'on' ? '🛑 Panic OFF' : '🆘 Panic';
-  load();
 }
 async function quickDisarmAll(){
   await fetch('/api/mode/set?mode=disarmed');
@@ -2656,7 +2685,7 @@ void initWebServer() {
   server.on("/api/status-light", HTTP_GET, [](AsyncWebServerRequest *req) {
     if (!requireAuth(req)) return;
     JsonDocument doc;
-    doc["wifi"]     = wifiConnected ? "connected" : (apMode ? "ap" : "disconnected");
+    doc["wifi"]     = (WiFi.status() == WL_CONNECTED) ? "connected" : (apMode ? "ap" : "disconnected");
     doc["activeMode"]  = alarmModeToHaString(alarmCtx.activeMode);
     doc["globalState"] = alarmStateToHaString(alarmCtx.globalState);
     doc["mqttConnected"] = mqtt.connected();

@@ -387,12 +387,15 @@ void alarmLoop() {
         break;
 
       // ─── ARMING (exit delay active) ────────────────────────────────────
-      case ZONE_ARMING:
-        if (now - zs.armedAtMs >= ((uint32_t)zc.exitDelayS * 1000UL)) {
+      case ZONE_ARMING: {
+        uint32_t exitMs = ((uint32_t)zc.exitDelayS * 1000UL);
+        // Exit delay expired, or hard cap at exit+30s (prevents forever-stuck ARMING)
+        if (now - zs.armedAtMs >= exitMs || (exitMs > 0 && now - zs.armedAtMs > exitMs + 30000UL)) {
           setZoneAlarmState(zoneId, ZONE_ARMED_IDLE);
           zs.armedAtMs = now;  // reset timestamp for settle grace period
         }
         break;
+      }
 
       // ─── ARMED_IDLE ───────────────────────────────────────────────────
       case ZONE_ARMED_IDLE: {

@@ -92,7 +92,7 @@ void pub(const String& subtopic, const String& value) {
 // ─── Connection with exponential backoff ───────────────────────────────────
 
 void connectMQTT() {
-  if (!wifiConnected || apMode) return;
+  if (WiFi.status() != WL_CONNECTED || apMode) return;
   if (mqtt.connected()) { mqttBackoff = 1000; return; }
 
   uint32_t now = millis();

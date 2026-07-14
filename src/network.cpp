@@ -117,6 +117,18 @@ void wifiStationRetryLoop() {
   uint32_t now = millis();
 
   // ─── Case 1: Trying to connect (not AP, not connected) ─────────────────
+  // Before entering retry logic, re-sync wifiConnected with actual WiFi state.
+  // Without this, a transient de-sync triggers the entire retry/AP-fallback
+  // cascade, killing MQTT, API, and the alarm engine.
+  if (!apMode && !wifiConnected && WiFi.status() == WL_CONNECTED) {
+    wifiConnected = true;
+    wifiRetryCount = 0;
+    wifiRetryNextMs = 0;
+    wifiConnectState = WifiConnectState::IDLE;
+    logSystem("WiFi re-synced (was marked down but stack is connected)");
+    return;
+  }
+
   if (!apMode && !wifiConnected) {
     // If a connection attempt is in progress, poll it non-blockingly
     if (wifiConnectState == WifiConnectState::POLLING) {

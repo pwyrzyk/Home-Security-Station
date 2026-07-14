@@ -7,6 +7,8 @@
 #define FIRMWARE_VERSION "0.1.0"
 #endif
 
+#define BUILD_DATE (__DATE__ " " __TIME__)
+
 // ─── Hardware constants ────────────────────────────────────────────────────
 #define DEVICE_NAME "home-alarm"
 
