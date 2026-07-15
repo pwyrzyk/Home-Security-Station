@@ -109,9 +109,14 @@ static void handleHeartbeat(const char* msg) {
   }
 }
 
-// ─── Process a command message: "CMD:<slaveId>:<pin>*<mode>" ────────────────
+// ─── Process a command message ────────────────────────────────────────────
+// Two formats are accepted:
+//   "CMD:<slaveId>:<pin>*<mode>" — arm or disarm (mode letter present)
+//   "CMD:<slaveId>:<pin>"        — disarm when system is armed (PIN only)
+//
+// The # character is reserved on the keypad as an end-of-input marker,
+// so when armed, the keypad sends only the PIN — no * or mode letter.
 static void handleCommand(const char* msg) {
-  // Expected format: "CMD:1:1234*A"
   const char* payload = msg + strlen(KEYPAD_CMD_PREFIX);
 
   // Parse slave ID
@@ -127,30 +132,35 @@ static void handleCommand(const char* msg) {
     return;
   }
 
-  // Parse PIN and mode: "1234*A"
   const char* pinStart = colonPos + 1;
   char* starPos = strchr(pinStart, '*');
-  if (!starPos || starPos == pinStart) {
-    Serial.println("[KEYPAD] Malformed CMD: missing * separator or empty PIN");
-    return;
-  }
-
-  // Extract PIN (up to 4 digits)
-  size_t pinLen = starPos - pinStart;
-  if (pinLen == 0 || pinLen > 4) {
-    Serial.println("[KEYPAD] Invalid PIN length");
-    return;
-  }
 
   char pin[5] = {0};
-  memcpy(pin, pinStart, pinLen);
-  pin[pinLen] = '\0';
+  char modeLetter = '\0';  // '\0' means PIN-only (no mode letter)
 
-  // Extract mode letter (single char after *)
-  char modeLetter = *(starPos + 1);
-  if (modeLetter == '\0') {
-    Serial.println("[KEYPAD] Missing mode letter after *");
-    return;
+  if (starPos && starPos != pinStart) {
+    // Format: "1234*A" — extract PIN and mode letter
+    size_t pinLen = starPos - pinStart;
+    if (pinLen == 0 || pinLen > 4) {
+      Serial.println("[KEYPAD] Invalid PIN length");
+      return;
+    }
+    memcpy(pin, pinStart, pinLen);
+    pin[pinLen] = '\0';
+    modeLetter = *(starPos + 1);
+    if (modeLetter == '\0') {
+      Serial.println("[KEYPAD] Missing mode letter after *");
+      return;
+    }
+  } else {
+    // Format: PIN only (no *) — entire remaining string is the PIN
+    size_t pinLen = strlen(pinStart);
+    if (pinLen == 0 || pinLen > 4) {
+      Serial.println("[KEYPAD] Invalid PIN length");
+      return;
+    }
+    memcpy(pin, pinStart, pinLen);
+    pin[pinLen] = '\0';
   }
 
   // ─── Authenticate user by PIN ─────────────────────────────────────────
@@ -160,6 +170,7 @@ static void handleCommand(const char* msg) {
     char logBuf[64];
     snprintf(logBuf, sizeof(logBuf), "Keypad %d: auth failed (bad PIN)", slaveId);
     logSystem(logBuf);
+    rs485Send("ERR:WRONG_PIN");
     return;
   }
 
@@ -170,7 +181,12 @@ static void handleCommand(const char* msg) {
   AlarmState currentState = deriveGlobalAlarmState();
 
   if (currentState == AlarmState::DISARMED) {
-    // System is disarmed → arm in the requested mode
+    // System is disarmed → must have a mode letter to arm
+    if (modeLetter == '\0') {
+      Serial.printf("[KEYPAD] CMD from slave %d: PIN-only refused (system disarmed, no mode)\n", slaveId);
+      return;
+    }
+
     AlarmMode targetMode = keypadLetterToMode(modeLetter);
     if (targetMode == AlarmMode::DISARMED) {
       Serial.printf("[KEYPAD] Invalid mode letter '%c' from slave %d\n",
@@ -197,6 +213,7 @@ static void handleCommand(const char* msg) {
     }
   } else {
     // System is armed (any mode) → disarm with valid PIN
+    // Accepts both "CMD:1:1234" (PIN only) and "CMD:1:1234*A" (with any mode letter)
     char source[32];
     snprintf(source, sizeof(source), "keypad_%d/%s", slaveId, user->username);
 
@@ -220,6 +237,7 @@ static void processMessage(const char* msg) {
     handleCommand(msg);
   } else {
     Serial.printf("[KEYPAD] Unknown message: %.32s\n", msg);
+    rs485Send("ERR:UNKNOWN_CMD");
   }
 }
 

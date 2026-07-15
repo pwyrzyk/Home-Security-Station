@@ -777,6 +777,8 @@ small{color:var(--muted);font-size:12px}
 <div style="margin-top:12px;display:flex;gap:8px">
 <button class="btn btn-save" onclick="saveConfig()">Save Config</button>
 <button class="btn btn-save" onclick="reconnect()">Reconnect WiFi</button>
+<button class="btn btn-save" onclick="window.open('https://github.com/pwyrzyk/Home-Security-Station/blob/main/README.md','_blank')">📖 Documentation</button>
+<button class="btn btn-save" onclick="window.open('/rs485','_blank')">📡 RS485 Monitor</button>
 <button class="btn btn-danger" onclick="restart()">Restart</button></div>
 <div id="cfgMsg" style="margin-top:8px;font-size:13px"></div></div>
 <div id="page-eventlog" class="page">

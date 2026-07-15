@@ -295,7 +295,7 @@ HB:<slaveId>
 ```
 Every ~60 seconds. `slaveId` = 1–4. Slaves that miss heartbeats for >2 minutes are marked offline.
 
-#### Arm / Disarm Command
+#### Arm Command (system disarmed)
 ```
 CMD:<slaveId>:<pin>*<mode>
 ```
@@ -304,7 +304,7 @@ CMD:<slaveId>:<pin>*<mode>
 |---|---|
 | `<slaveId>` | Keypad ID: 1, 2, 3, or 4 |
 | `<pin>` | User PIN: 1–4 digits |
-| `<mode>` | Arm mode or disarm trigger |
+| `<mode>` | Arm mode letter (A/B/C/D) |
 
 **Mode letters:**
 
@@ -314,20 +314,38 @@ CMD:<slaveId>:<pin>*<mode>
 | `B` | Arm in AWAY mode |
 | `C` | Arm in NIGHT mode |
 | `D` | Arm in VACATION mode |
-| `#` | DISARM (from any armed state) |
 
-**Examples:**
+**Example:**
 ```
 CMD:1:1234*A     # Keypad 1, PIN 1234, arm HOME
-CMD:2:5678*B     # Keypad 2, PIN 5678, arm AWAY
-CMD:1:1234*#     # Keypad 1, PIN 1234, disarm
 ```
 
 **Behavior:**
-- If the system is DISARMED → arms in the requested mode (A/B/C/D)
-- If the system is ARMED (any mode) → any valid PIN with any mode letter **disarms**
-- Unknown PINs are rejected (logged as auth failure)
+- PIN-only (no `*` or mode letter) is **rejected** when disarmed — a mode must be specified
+- Unknown PINs are rejected with `ERR:WRONG_PIN`
 - PINs are validated against registered users in the system
+
+#### Disarm Command (system armed)
+```
+CMD:<slaveId>:<pin>
+```
+
+When the system is armed, the keypad sends **only the PIN** (no `*` or mode letter). The `#` character is reserved on the keypad as an end-of-input confirmation marker.
+
+| Field | Description |
+|---|---|
+| `<slaveId>` | Keypad ID: 1, 2, 3, or 4 |
+| `<pin>` | User PIN: 1–4 digits |
+
+**Example:**
+```
+CMD:1:1234       # Keypad 1, PIN 1234, disarm
+```
+
+**Behavior:**
+- Any valid PIN disarms (the `*` separator and mode letter are optional when armed)
+- The legacy `CMD:<slaveId>:<pin>*<any>` format also disarms for backwards compatibility
+- Unknown PINs are rejected with `ERR:WRONG_PIN`
 
 ### 5.5 WebSocket Bus Monitor
 
@@ -337,9 +355,24 @@ Accessible at `/rs485` on the device. Provides:
 - Raw message send capability for testing
 - Auto-reconnecting WebSocket at `/ws-rs485`
 
-### 5.6 Recent Protocol Fixes
+### 5.6 Error Responses (Master → Slave)
+
+The master sends error codes back to the slave when a command fails:
+
+```
+ERR:<code>
+```
+
+| Error Code | When |
+|---|---|
+| `ERR:WRONG_PIN` | PIN authentication failed — PIN does not match any registered user |
+| `ERR:UNKNOWN_CMD` | Message received that does not match any known format (`HB:`, `CMD:`) |
+
+### 5.7 Recent Protocol Fixes
 
 - **Full state transition broadcast:** The slave now receives every state change, not just the initial arm/disarm command. Exit delay expiry, entry delay expiry, and alarm triggers all generate `STATE:` broadcasts automatically.
+- **PIN-only disarm:** When the system is armed, the keypad can send `CMD:<slaveId>:<pin>` without `*` or mode letter. The `#` character is reserved as an end-of-input marker on the keypad side.
+- **Error feedback:** Unknown PINs now reply `ERR:WRONG_PIN` and unknown messages reply `ERR:UNKNOWN_CMD` so the slave can display error feedback.
 - **Periodic slave status:** The web monitor's slave status panel updates every 3 seconds (previously was stuck on "Loading...").
 
 ---
