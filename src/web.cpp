@@ -9,6 +9,7 @@
 #include "event_log.h"
 #include "auth.h"
 #include "backup.h"
+#include "rs485_web.h"
 #include <ArduinoJson.h>
 #include <Update.h>
 
@@ -2950,6 +2951,9 @@ void initWebServer() {
     requestSaveConfig();
     req->send(200, "application/json", "{\"ok\":true}");
   });
+
+  // ─── RS-485 Bus Monitor page ──────────────────────────────────────────
+  initRS485Web();
 
   server.begin();
 }

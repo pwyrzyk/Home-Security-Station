@@ -2,6 +2,7 @@
 #include "auth.h"
 #include "alarm_mode.h"
 #include "event_log.h"
+#include "rs485_web.h"
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // RS-485 Keypad Communication — Master Implementation
@@ -47,6 +48,9 @@ static void rs485Send(const char* msg) {
   Serial1.print('\n');
   Serial1.flush();
   rs485SetRx();
+
+  // Notify web monitor of TX
+  rs485NotifyTX(msg);
 }
 
 // ─── Map AlarmState to broadcast string ────────────────────────────────────
@@ -59,7 +63,7 @@ static const char* alarmStateToKeypadString(AlarmState s) {
     case AlarmState::ARMED_VACATION:      return "ARMED_VACATION";
     case AlarmState::ARMED_CUSTOM_BYPASS: return "ARMED_CUSTOM";
     case AlarmState::PENDING:             return "PENDING";
-    case AlarmState::TRIGGERED:           return "TRIGGERED";
+    case AlarmState::TRIGGERED:           return "ALARM_TRIGGERED";
     default:                              return "UNKNOWN";
   }
 }
@@ -207,6 +211,9 @@ static void handleCommand(const char* msg) {
 
 // ─── Process a complete received line ──────────────────────────────────────
 static void processMessage(const char* msg) {
+  // Notify web monitor of all RX traffic
+  rs485NotifyRX(msg);
+
   if (strncmp(msg, KEYPAD_HB_PREFIX, strlen(KEYPAD_HB_PREFIX)) == 0) {
     handleHeartbeat(msg);
   } else if (strncmp(msg, KEYPAD_CMD_PREFIX, strlen(KEYPAD_CMD_PREFIX)) == 0) {
@@ -309,4 +316,9 @@ bool keypadSlaveOnline(uint8_t slaveIdx) {
 uint32_t keypadSlaveLastHB(uint8_t slaveIdx) {
   if (slaveIdx >= KEYPAD_MAX_SLAVES) return 0;
   return slaves[slaveIdx].lastHeartbeatMs;
+}
+
+// ─── Raw send from external sources (e.g. RS-485 web monitor) ──────────
+void rs485SendRaw(const char* msg) {
+  rs485Send(msg);
 }

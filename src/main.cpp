@@ -10,8 +10,10 @@
 #include "mqtt.h"
 #include "ha_discovery.h"
 #include "web.h"
+#include "rs485_web.h"
 #include "event_log.h"
 #include "auth.h"
+#include "keypad_comm.h"
 #include <LittleFS.h>
 
 // ─── Sensor poll interval ──────────────────────────────────────────────────
@@ -90,6 +92,10 @@ void setup() {
 
   setupMQTT();
 
+  // ─── RS-485 Keypad communication (Master) ──────────────────────────────
+  Serial.println("[BOT] Init keypad RS-485...");
+  keypadCommInit();
+
   digitalWrite(LED_BUILTIN, LOW);     // boot complete
 }
 
@@ -137,6 +143,12 @@ void loop() {
 
   // ─── Event log batch flush ────────────────────────────────────────────
   eventLogFlushIfNeeded();
+
+  // ─── RS-485 Keypad communication ──────────────────────────────────────
+  keypadCommLoop();
+
+  // ─── RS-485 WebSocket monitor (slave status broadcast) ─────────────────
+  rs485WebLoop();
 
   // ─── Status LED: fast blink during disarming/prealarm, slow blink during alarm ───
   static uint32_t lastLedBlink = 0;

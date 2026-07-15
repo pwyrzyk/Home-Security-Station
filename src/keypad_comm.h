@@ -57,6 +57,7 @@ struct KeypadSlaveStatus {
 void keypadCommInit();
 
 // Process incoming RS-485 data. Call every loop() iteration.
+// Also handles slave status broadcast timer for the WebSocket monitor.
 void keypadCommLoop();
 
 // Notify keypads of alarm state change. Called externally when state changes.
@@ -68,3 +69,7 @@ bool keypadSlaveOnline(uint8_t slaveIdx);
 
 // Get last heartbeat time for a slave (0-based)
 uint32_t keypadSlaveLastHB(uint8_t slaveIdx);
+
+// Send raw message to RS-485 bus from external sources (e.g., web monitor).
+// Used by the RS-485 test page for debugging / protocol testing.
+void rs485SendRaw(const char* msg);

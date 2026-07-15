@@ -4,6 +4,7 @@
 #include "zones.h"
 #include "hardware.h"
 #include "event_log.h"
+#include "keypad_comm.h"
 
 void (*onZoneStateChanged)(uint8_t zoneId) = nullptr;
 void (*onGlobalStateChanged)(AlarmState newState) = nullptr;
@@ -479,5 +480,6 @@ void alarmLoop() {
     if (onGlobalStateChanged) {
       onGlobalStateChanged(currentState);
     }
+    keypadCommNotifyState(currentState);
   }
 }

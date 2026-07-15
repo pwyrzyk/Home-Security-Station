@@ -3,6 +3,7 @@
 #include "sensors.h"
 #include "event_log.h"
 #include "mqtt.h"
+#include "keypad_comm.h"
 
 // ─── Helper: check if a sensor is tripped for a given zone ────────────────
 static bool sensorTrippedForZone(uint8_t zoneId, uint8_t& outSensorId, char* outSensorName, size_t nameSize) {
@@ -268,6 +269,7 @@ bool applyModeAndPublish(AlarmMode mode, const char* source) {
     publishGlobalAlarmState();
     publishActiveProfile();
     publishZoneTopics();
+    keypadCommNotifyState(alarmCtx.globalState);
   }
   return ok;
 }
@@ -278,4 +280,5 @@ void disarmAndPublish(const char* source) {
   publishGlobalAlarmState();
   publishActiveProfile();
   publishZoneTopics();
+  keypadCommNotifyState(alarmCtx.globalState);
 }
