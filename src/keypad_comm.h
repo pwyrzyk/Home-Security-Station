@@ -7,27 +7,32 @@
 // RS-485 Keypad Communication Module — Master Side
 // ═══════════════════════════════════════════════════════════════════════════════
 //
-// This module handles RS-485 half-duplex communication between the alarm
-// controller (Master) and up to 4 external keypad devices (Slave 1..4).
+// Master-Slave polling protocol (Modbus RTU style).
+// Only the Master initiates communication — slaves NEVER transmit unprompted.
+// This prevents RS-485 bus collisions that occurred with the old fire-and-forget
+// heartbeat + command protocol.
+//
+// Protocol messages are ASCII line-based, newline-terminated:
+//
+//   Master → Slave:
+//     "P:<id>"                    — Poll: query slave status
+//     "G:<id>"                    — Get payload: request pending user input
+//     "A:<id>"                    — Ack: command processed successfully
+//     "E:<id>:<code>"             — Error (WRONG_PIN, BAD_FMT, etc.)
+//     "S:<state>"                 — Broadcast: alarm state change (all slaves)
+//
+//   Slave → Master (only in response to P: or G:):
+//     "R:<id>:0"                  — Response to poll: no pending input
+//     "R:<id>:1"                  — Response to poll: user input ready
+//     "D:<id>:<pin>*<mode>"       — Response to G: — full user command
+//
+// Poll cycle: 200ms per slave. Response timeout: 80ms.
+// Slave marked offline after 3 consecutive timeouts.
 //
 // Hardware:
-//   - UART1: TX1 = GPIO4, RX1 = GPIO1 (directly on ESP32-S2/S3 Serial1)
+//   - UART1: TX1 = GPIO4, RX1 = GPIO1 (ESP32-S2/S3 Serial1)
 //   - RS-485 transceiver (e.g. MAX485) connected to UART1
 //   - DE/RE pin optional (if auto-direction transceiver is used, set to -1)
-//
-// Protocol (simple ASCII line-based, newline-terminated):
-//   Slave → Master:
-//     "HB:<slaveId>"                    — heartbeat (every 60s)
-//     "CMD:<slaveId>:<pin>*<mode>"      — arm/disarm command
-//                                          pin = user PIN (digits)
-//                                          mode = A/B/C/D (arm) or # (disarm)
-//
-//   Master → Slaves (broadcast on state change only):
-//     "STATE:<stateString>"             — alarm state notification
-//                                          stateString: "ARMED_HOME", "ARMED_AWAY",
-//                                          "ARMED_NIGHT", "ARMED_VACATION",
-//                                          "DISARMED", "PENDING_EXIT", "PENDING_ENTRY",
-//                                          "TRIGGERED"
 //
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -38,17 +43,39 @@
 #define RS485_BAUD      9600    // Baud rate for RS-485 bus
 
 // ─── Protocol constants ────────────────────────────────────────────────────
-#define KEYPAD_MAX_SLAVES        4
-#define KEYPAD_HEARTBEAT_TIMEOUT_MS  120000   // 2 min — slave considered offline
-#define KEYPAD_MAX_MSG_LEN       64          // max incoming message length
-#define KEYPAD_CMD_PREFIX        "CMD:"
-#define KEYPAD_HB_PREFIX         "HB:"
-#define KEYPAD_STATE_PREFIX      "STATE:"
+#define KEYPAD_MAX_SLAVES          4
+#define KEYPAD_MAX_MSG_LEN         64
+#define KEYPAD_OFFLINE_THRESHOLD   3      // consecutive timeouts before offline
+#define KEYPAD_POLL_INTERVAL_MS    200    // ms between polling consecutive slaves
+#define KEYPAD_RESPONSE_TIMEOUT_MS 80     // ms to wait for a slave response
 
-// ─── Slave status ──────────────────────────────────────────────────────────
+// ─── Protocol prefixes (single chars for minimal traffic) ──────────────────
+#define KEYPAD_PREFIX_POLL      'P'
+#define KEYPAD_PREFIX_RESP      'R'
+#define KEYPAD_PREFIX_GET       'G'
+#define KEYPAD_PREFIX_DATA      'D'
+#define KEYPAD_PREFIX_ACK       'A'
+#define KEYPAD_PREFIX_ERR       'E'
+#define KEYPAD_PREFIX_STATE     'S'
+
+// ─── Error codes (E:<id>:<code>) ───────────────────────────────────────────
+#define KEYPAD_ERR_WRONG_PIN    "WRONG_PIN"
+#define KEYPAD_ERR_BAD_FMT      "BAD_FMT"
+
+// ─── Master polling state machine ───────────────────────────────────────────
+enum class PollPhase : uint8_t {
+  PHASE_IDLE,       // ready to send next poll
+  PHASE_WAIT_POLL,  // waiting for R: response after P:
+  PHASE_WAIT_DATA,  // waiting for D: payload after G:
+  PHASE_DONE        // transaction complete, will advance to next slave
+};
+
+// ─── Per-slave master state ────────────────────────────────────────────────
 struct KeypadSlaveStatus {
   bool     online;
-  uint32_t lastHeartbeatMs;
+  uint32_t lastResponseMs;        // last successful response timestamp
+  uint8_t  consecutiveTimeouts;   // counter; >= OFFLINE_THRESHOLD = offline
+  bool     userInputPending;      // true when slave reported flag=1
 };
 
 // ─── Public API ────────────────────────────────────────────────────────────
@@ -56,18 +83,19 @@ struct KeypadSlaveStatus {
 // Initialize RS-485 UART and internal state. Call once in setup().
 void keypadCommInit();
 
-// Process incoming RS-485 data. Call every loop() iteration.
-// Also handles slave status broadcast timer for the WebSocket monitor.
+// Process the Master polling state machine. Call every loop() iteration.
+// Handles: sending polls, waiting for responses, requesting payloads,
+// processing commands, and advancing the round-robin slave index.
 void keypadCommLoop();
 
-// Notify keypads of alarm state change. Called externally when state changes.
-// This is the ONLY output from the main system into this module.
+// Notify keypads of alarm state change. The broadcast is queued and sent
+// between poll cycles (never interrupts an active transaction).
 void keypadCommNotifyState(AlarmState state);
 
 // Query slave online status (0-based index, 0..3)
 bool keypadSlaveOnline(uint8_t slaveIdx);
 
-// Get last heartbeat time for a slave (0-based)
+// Get last response time for a slave (0-based index)
 uint32_t keypadSlaveLastHB(uint8_t slaveIdx);
 
 // Send raw message to RS-485 bus from external sources (e.g., web monitor).
